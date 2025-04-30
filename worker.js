@@ -34,7 +34,7 @@ async function handleRequest(request, env) {
     if (text && text.startsWith('/')) {
       const command = text.split(' ')[0];
       if (command === '/start') {
-        await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等多种格式。支持最大5GB的文件上传。', env);
+        await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等多种格式。支持最大50Mb的文件上传(telegram bot自身限制)。', env);
       } else if (command === '/help') {
         await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大5GB的文件上传（受Cloudflare Worker限制，超大文件可能会失败）。\n4. 无需输入其他命令，无需切换模式。\n5. 此机器人由 @uki0x 开发，支持多种文件类型上传', env);
       }
