@@ -100,7 +100,7 @@ async function handleRequest(request, env) {
       if (command === '/start') {
         try {
           console.log("开始处理/start命令");
-          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等多种格式。支持最大50Mb的文件上传(telegram bot自身限制)。', env);
+          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等400多种格式。支持最大50Mb的文件上传(Telegram Bot自身限制)。', env);
           console.log("/start命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/start消息失败:", error);
@@ -108,10 +108,29 @@ async function handleRequest(request, env) {
       } else if (command === '/help') {
         try {
           console.log("开始处理/help命令");
-          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大50Mb的文件上传（受Cloudflare Worker限制，超大文件可能会失败）。\n4. 无需输入其他命令，无需切换模式。\n5. 此机器人由 @uki0x 开发，支持多种文件类型上传', env);
+          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大50Mb的文件上传（受Telegram Bot限制）。\n4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n5. 使用 /formats 命令查看支持的文件格式类别。\n6. 无需输入其他命令，无需切换模式。\n7. 此机器人由 @uki0x 开发', env);
           console.log("/help命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/help消息失败:", error);
+        }
+      } else if (command === '/formats') {
+        try {
+          console.log("开始处理/formats命令");
+          const formatsMessage = `📋 支持的文件格式类别：\n\n` +
+            `🖼️ 图像：jpg, png, gif, webp, svg, bmp, tiff, heic, raw...\n` +
+            `🎬 视频：mp4, avi, mov, mkv, webm, flv, rmvb, m4v...\n` +
+            `🎵 音频：mp3, wav, ogg, flac, aac, m4a, wma, opus...\n` +
+            `📝 文档：pdf, doc(x), xls(x), ppt(x), txt, md, epub...\n` +
+            `🗜️ 压缩：zip, rar, 7z, tar, gz, xz, bz2...\n` +
+            `⚙️ 可执行：exe, msi, apk, ipa, deb, rpm, dmg...\n` +
+            `🌐 网页/代码：html, css, js, ts, py, java, php, go...\n` +
+            `🎨 3D/设计：obj, fbx, blend, stl, psd, ai, sketch...\n` +
+            `📊 数据/科学：mat, hdf5, parquet, csv, json, xml...\n\n` +
+            `总计支持超过400种文件格式！`;
+          const result = await sendMessage(chatId, formatsMessage, env);
+          console.log("/formats命令响应:", JSON.stringify(result).substring(0, 200));
+        } catch (error) {
+          console.error("发送/formats消息失败:", error);
         }
       } else {
         console.log("未知命令:", command);
@@ -137,7 +156,7 @@ async function handleRequest(request, env) {
     // 自动处理视频
     else if (message.video || (message.document &&
             (message.document.mime_type?.startsWith('video/') ||
-             message.document.file_name?.match(/\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|3gp|mpeg|mpg|ts)$/i)))) {
+             message.document.file_name?.match(/\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|3gp|mpeg|mpg|ts|rmvb|rm|asf|amv|mts|m2ts|vob|divx|ogm|ogv)$/i)))) {
       try {
         console.log(`开始处理视频，类型: ${message.video ? 'video' : 'document'}`);
         await handleVideo(message, chatId, !!message.document, env);
@@ -149,7 +168,7 @@ async function handleRequest(request, env) {
     // 自动处理音频
     else if (message.audio || (message.document &&
             (message.document.mime_type?.startsWith('audio/') ||
-             message.document.file_name?.match(/\.(mp3|wav|ogg|flac|aac|m4a|wma|opus|mid|midi)$/i)))) {
+             message.document.file_name?.match(/\.(mp3|wav|ogg|flac|aac|m4a|wma|opus|mid|midi|ape|ra|amr|au|voc|ac3|dsf|dsd|dts|ast|aiff|aifc|spx|gsm|wv|tta|mpc|tak)$/i)))) {
       try {
         console.log(`开始处理音频，类型: ${message.audio ? 'audio' : 'document'}`);
         await handleAudio(message, chatId, !!message.document, env);
@@ -161,7 +180,7 @@ async function handleRequest(request, env) {
     // 自动处理动画/GIF
     else if (message.animation || (message.document &&
             (message.document.mime_type?.includes('animation') ||
-             message.document.file_name?.match(/\.gif$/i)))) {
+             message.document.file_name?.match(/\.(gif|webp|apng|flif|avif)$/i)))) {
       try {
         console.log(`开始处理动画，类型: ${message.animation ? 'animation' : 'document'}`);
         await handleAnimation(message, chatId, !!message.document, env);
@@ -665,6 +684,10 @@ async function handleDocument(message, chatId, env) {
   const fileName = message.document.file_name || `file_${Date.now()}`;
   const mimeType = message.document.mime_type || 'application/octet-stream';
 
+  // 检查文件扩展名是否支持
+  const fileExt = fileName.split('.').pop().toLowerCase();
+  const isSupported = isExtValid(fileExt);
+  
   // 从 env 获取配置
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
@@ -674,7 +697,7 @@ async function handleDocument(message, chatId, env) {
   const fileIcon = getFileIcon(fileName, mimeType);
   
   // 发送处理中消息并获取消息ID以便后续更新
-  const sendResult = await sendMessage(chatId, `${fileIcon} 正在处理您的文件 "${fileName}"，请稍候...`, env);
+  const sendResult = await sendMessage(chatId, `${fileIcon} 正在处理您的文件 "${fileName}"${isSupported ? '' : ' (不支持的扩展名，但仍将尝试上传)'}，请稍候...`, env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env);
@@ -706,10 +729,26 @@ async function handleDocument(message, chatId, env) {
       // 修复exe文件上传问题：确保文件名保持原样，不要修改扩展名
       let safeFileName = fileName;
       
-      // 如果是可执行文件，确保MIME类型正确
+      // 确保MIME类型正确
       let safeMimeType = mimeType;
-      if (fileName.toLowerCase().endsWith('.exe')) {
-        safeMimeType = 'application/octet-stream';
+      // 基于文件扩展名设置正确的MIME类型
+      if (fileExt) {
+        // 应用程序可执行文件
+        if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage'].includes(fileExt)) {
+          safeMimeType = 'application/octet-stream';
+        }
+        // 移动应用程序
+        else if (['apk', 'ipa'].includes(fileExt)) {
+          safeMimeType = 'application/vnd.android.package-archive';
+        }
+        // 压缩文件
+        else if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz'].includes(fileExt)) {
+          safeMimeType = fileExt === 'zip' ? 'application/zip' : 'application/x-compressed';
+        }
+        // 光盘镜像
+        else if (['iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf'].includes(fileExt)) {
+          safeMimeType = 'application/octet-stream';
+        }
       }
       
       formData.append('file', new File([fileBuffer], safeFileName, { type: safeMimeType }));
@@ -1002,54 +1041,62 @@ function getFileIcon(filename, mimeType) {
   if (filename) {
     const ext = filename.split('.').pop().toLowerCase();
     
-    // 图片文件
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'tif', 'ico', 'heic', 'heif', 'avif'].includes(ext)) {
-      return '🖼️';
-    }
-    
-    // 视频文件
-    if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'm4v', '3gp', 'mpeg', 'mpg', 'ts'].includes(ext)) {
-      return '🎬';
-    }
-    
-    // 音频文件
-    if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus', 'mid', 'midi'].includes(ext)) {
-      return '🎵';
-    }
-    
-    // 文档文件
-    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'md', 'csv', 'json', 'xml'].includes(ext)) {
-      return '📝';
-    }
-    
-    // 压缩文件
-    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(ext)) {
-      return '🗜️';
-    }
-    
-    // 可执行文件
-    if (['exe', 'msi', 'apk', 'app', 'dmg', 'iso'].includes(ext)) {
-      return '⚙️';
-    }
-    
-    // 网页文件
-    if (['html', 'htm', 'css', 'js'].includes(ext)) {
-      return '🌐';
-    }
-    
-    // 字体文件
-    if (['ttf', 'otf', 'woff', 'woff2', 'eot'].includes(ext)) {
-      return '🔤';
-    }
-    
-    // 3D和设计文件
-    if (['obj', 'fbx', 'blend', 'stl', 'psd', 'ai', 'eps', 'sketch', 'fig'].includes(ext)) {
-      return '🎨';
-    }
-    
-    // 其他常见文件
-    if (['torrent', 'srt', 'vtt', 'ass', 'ssa'].includes(ext)) {
-      return '📄';
+    // 检查扩展名是否在支持列表中
+    if (isExtValid(ext)) {
+      // 图片文件
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'tif', 'ico', 'heic', 'heif', 'avif', 'raw', 'arw', 'cr2', 'nef', 'orf', 'rw2', 'dng', 'raf'].includes(ext)) {
+        return '🖼️';
+      }
+      
+      // 视频文件
+      if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'm4v', '3gp', 'mpeg', 'mpg', 'mpe', 'ts', 'rmvb', 'rm', 'asf', 'amv', 'mts', 'm2ts', 'vob', 'divx', 'tp', 'ogm', 'ogv'].includes(ext)) {
+        return '🎬';
+      }
+      
+      // 音频文件
+      if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus', 'mid', 'midi', 'ape', 'ra', 'amr', 'au', 'voc', 'ac3', 'dsf', 'dsd', 'dts', 'dtsma', 'ast', 'aiff', 'aifc', 'spx', 'gsm', 'wv', 'tta', 'mpc', 'tak'].includes(ext)) {
+        return '🎵';
+      }
+      
+      // 电子书和文档文件
+      if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'md', 'csv', 'json', 'xml', 'epub', 'mobi', 'azw', 'azw3', 'fb2', 'djvu', 'cbz', 'cbr', 'lit', 'lrf', 'opf', 'prc', 'azw1', 'azw4', 'azw6', 'cb7', 'cbt', 'cba', 'chm', 'xps', 'oxps', 'ps', 'dvi'].includes(ext)) {
+        return '📝';
+      }
+      
+      // 压缩文件
+      if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz', 'z', 'lz', 'lzma', 'lzo', 'rz', 'sfx', 'cab', 'arj', 'lha', 'lzh', 'zoo', 'arc', 'ace', 'dgc', 'dgn', 'lbr', 'pak', 'pit', 'sit', 'sqx'].includes(ext)) {
+        return '🗜️';
+      }
+      
+      // 可执行文件和系统镜像
+      if (['exe', 'msi', 'apk', 'ipa', 'app', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage', 'iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf', 'qcow2', 'pvm', 'dsk', 'hdd', 'bin', 'cue', 'mds', 'mdf', 'nrg', 'ccd', 'cif', 'c2d', 'daa', 'b6t', 'b5t', 'bwt', 'isz', 'cdi', 'flp', 'uif', 'xdi', 'sdi'].includes(ext)) {
+        return '⚙️';
+      }
+      
+      // 网页和脚本文件
+      if (['html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'php', 'py', 'rb', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'swift', 'kt', 'rs', 'dart', 'lua', 'groovy', 'scala', 'perl', 'r', 'sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'psm1', 'vbs', 'sql', 'yaml', 'yml', 'toml', 'wasm', 'wat'].includes(ext)) {
+        return '🌐';
+      }
+      
+      // 字体文件
+      if (['ttf', 'otf', 'woff', 'woff2', 'eot'].includes(ext)) {
+        return '🔤';
+      }
+      
+      // 3D、游戏和设计文件
+      if (['obj', 'fbx', 'blend', 'stl', 'psd', 'ai', 'eps', 'sketch', 'fig', 'svg', 'dae', '3ds', 'gltf', 'glb', 'mb', 'unity3d', 'unitypackage', 'max', 'c4d', 'w3x', 'pk3', 'wad', 'bsp', 'map', 'rom', 'n64', 'z64', 'v64', 'nes', 'smc', 'sfc', 'gb', 'gbc', 'gba', 'nds'].includes(ext)) {
+        return '🎨';
+      }
+      
+      // 科学和专业数据文件
+      if (['mat', 'fits', 'hdf', 'hdf5', 'h5', 'nx', 'ngc', 'nxs', 'nb', 'cdf', 'nc', 'spss', 'sav', 'dta', 'do', 'odb', 'odt', 'ott', 'odp', 'otp', 'ods', 'ots', 'parquet', 'avro', 'proto', 'pbtxt', 'fbs'].includes(ext)) {
+        return '📊';
+      }
+      
+      // 其他特殊文件
+      if (['torrent', 'ico', 'crx', 'xpi', 'jar', 'war', 'ear', 'srt', 'vtt', 'ass', 'ssa'].includes(ext)) {
+        return '📄';
+      }
     }
   }
   
@@ -1067,4 +1114,47 @@ function formatFileSize(bytes, decimals = 2) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+// 检查文件扩展名是否在支持列表中
+function isExtValid(fileExt) {
+  return ['jpeg', 'jpg', 'png', 'gif', 'webp', 
+    'mp4', 'mp3', 'ogg',
+    'mp3', 'wav', 'flac', 'aac', 'opus',
+    'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'pdf', 
+    'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'go', 'java', 'php', 'py', 'rb', 'sh', 'bat', 'cmd', 'ps1', 'psm1', 'psd', 'ai', 'sketch', 'fig', 'svg', 'eps', 
+    // 压缩包格式
+    'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz',
+    // 应用程序包
+    'apk', 'ipa', 'exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage',
+    // 光盘镜像
+    'iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf',
+    // 文档格式
+    'epub', 'mobi', 'azw', 'azw3', 'fb2', 'djvu', 'cbz', 'cbr',
+    // 字体
+    'ttf', 'otf', 'woff', 'woff2', 'eot', 
+    // 其他文件格式
+    'torrent', 'ico', 'crx', 'xpi', 'jar', 'war', 'ear',
+    'qcow2', 'pvm', 'dsk', 'hdd', 'bin', 'cue', 'mds', 'mdf', 'nrg', 'ccd', 'cif', 'c2d', 'daa', 'b6t', 'b5t', 'bwt', 'isz', 'cdi', 'flp', 'uif', 'xdi', 'sdi',
+    // 源代码文件
+    'c', 'cpp', 'h', 'hpp', 'cs', 'swift', 'kt', 'rs', 'dart', 'lua', 'groovy', 'scala', 'perl', 'r', 'vbs', 'sql', 'yaml', 'yml', 'toml',
+    // 视频和音频相关
+    'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', '3gp', 'm4v', 'm4a', 'mid', 'midi',
+    // 小众图像格式
+    'tiff', 'tif', 'bmp', 'pcx', 'tga', 'icns', 'heic', 'heif', 'arw', 'cr2', 'nef', 'orf', 'rw2', 'dng', 'raf', 'raw',
+    // 小众档案格式
+    'z', 'lz', 'lzma', 'lzo', 'rz', 'sfx', 'cab', 'arj', 'lha', 'lzh', 'zoo', 'arc', 'ace', 'dgc', 'dgn', 'lbr', 'pak', 'pit', 'sit', 'sqx', 'gz.gpg', 'z.gpg',
+    // 小众视频格式
+    'rmvb', 'rm', 'asf', 'amv', 'mts', 'm2ts', 'vob', 'divx', 'mpeg', 'mpg', 'mpe', 'tp', 'ts', 'ogm', 'ogv', 
+    // 小众音频格式
+    'ape', 'wma', 'ra', 'amr', 'au', 'voc', 'ac3', 'dsf', 'dsd', 'dts', 'dtsma', 'ast', 'aiff', 'aifc', 'spx', 'gsm', 'wv', 'tta', 'mpc', 'tak',
+    // 小众电子书和文档格式
+    'lit', 'lrf', 'opf', 'prc', 'azw1', 'azw4', 'azw6', 'cbz', 'cbr', 'cb7', 'cbt', 'cba', 'chm', 'xps', 'oxps', 'ps', 'dvi',
+    // 小众开发和数据格式
+    'wasm', 'wat', 'f', 'for', 'f90', 'f95', 'hs', 'lhs', 'elm', 'clj', 'csv', 'tsv', 'parquet', 'avro', 'proto', 'pbtxt', 'fbs',
+    // 3D和游戏相关格式
+    'obj', 'fbx', 'dae', '3ds', 'stl', 'gltf', 'glb', 'blend', 'mb', 'unity3d', 'unitypackage', 'max', 'c4d', 'w3x', 'pk3', 'wad', 'bsp', 'map', 'rom', 'n64', 'z64', 'v64', 'nes', 'smc', 'sfc', 'gb', 'gbc', 'gba', 'nds',
+    // 科学和专业格式
+    'mat', 'fits', 'hdf', 'hdf5', 'h5', 'nx', 'ngc', 'nxs', 'nb', 'cdf', 'nc', 'spss', 'sav', 'dta', 'do', 'odb', 'odt', 'ott', 'odp', 'otp', 'ods', 'ots'
+  ].includes(fileExt);
 }
