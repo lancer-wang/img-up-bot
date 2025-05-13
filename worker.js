@@ -1,6 +1,12 @@
 export default {
   async fetch(request, env, ctx) {
-    return handleRequest(request, env);
+    console.log("收到请求：", request.method, request.url);
+    try {
+      return handleRequest(request, env);
+    } catch (error) {
+      console.error("主函数出错：", error);
+      return new Response('处理请求时出错', { status: 500 });
+    }
   }
 };
 
@@ -12,18 +18,24 @@ async function handleRequest(request, env) {
 
   // 检查必要的环境变量是否存在
   if (!IMG_BED_URL || !BOT_TOKEN) {
+    console.error("环境变量缺失: IMG_BED_URL=", !!IMG_BED_URL, "BOT_TOKEN=", !!BOT_TOKEN);
     return new Response('必要的环境变量 (IMG_BED_URL, BOT_TOKEN) 未配置', { status: 500 });
   }
+
+  console.log("环境变量检查通过: IMG_BED_URL=", IMG_BED_URL.substring(0, 8) + '...', "AUTH_CODE=", AUTH_CODE ? '[已设置]' : '[未设置]');
 
   // API_URL 现在在需要时基于 BOT_TOKEN 构建
   const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
   if (request.method !== 'POST') {
+    console.log("非POST请求被拒绝");
     return new Response('只接受POST请求', { status: 405 });
   }
 
   try {
     const update = await request.json();
+    console.log("收到Telegram更新，消息类型:", update.message ? Object.keys(update.message).filter(k => ['text', 'photo', 'video', 'document', 'audio', 'animation'].includes(k)).join(',') : 'no message');
+    
     if (!update.message) return new Response('OK', { status: 200 });
 
     const message = update.message;
@@ -43,29 +55,62 @@ async function handleRequest(request, env) {
 
     // 自动处理图片
     if (message.photo && message.photo.length > 0) {
-      await handlePhoto(message, chatId, env);
+      try {
+        console.log(`开始处理图片，长度: ${message.photo.length}`);
+        await handlePhoto(message, chatId, env);
+      } catch (error) {
+        console.error("处理图片时出错:", error);
+        await sendMessage(chatId, `❌ 处理图片时出错: ${error.message}`, env).catch(e => console.error("发送图片错误消息失败:", e));
+      }
     }
     // 自动处理视频
     else if (message.video || (message.document &&
             (message.document.mime_type?.startsWith('video/') ||
              message.document.file_name?.match(/\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|3gp|mpeg|mpg|ts)$/i)))) {
-      await handleVideo(message, chatId, !!message.document, env);
+      try {
+        console.log(`开始处理视频，类型: ${message.video ? 'video' : 'document'}`);
+        await handleVideo(message, chatId, !!message.document, env);
+      } catch (error) {
+        console.error("处理视频时出错:", error);
+        await sendMessage(chatId, `❌ 处理视频时出错: ${error.message}`, env).catch(e => console.error("发送视频错误消息失败:", e));
+      }
     }
     // 自动处理音频
     else if (message.audio || (message.document &&
             (message.document.mime_type?.startsWith('audio/') ||
              message.document.file_name?.match(/\.(mp3|wav|ogg|flac|aac|m4a|wma|opus|mid|midi)$/i)))) {
-      await handleAudio(message, chatId, !!message.document, env);
+      try {
+        console.log(`开始处理音频，类型: ${message.audio ? 'audio' : 'document'}`);
+        await handleAudio(message, chatId, !!message.document, env);
+      } catch (error) {
+        console.error("处理音频时出错:", error);
+        await sendMessage(chatId, `❌ 处理音频时出错: ${error.message}`, env).catch(e => console.error("发送音频错误消息失败:", e));
+      }
     }
     // 自动处理动画/GIF
     else if (message.animation || (message.document &&
             (message.document.mime_type?.includes('animation') ||
              message.document.file_name?.match(/\.gif$/i)))) {
-      await handleAnimation(message, chatId, !!message.document, env);
+      try {
+        console.log(`开始处理动画，类型: ${message.animation ? 'animation' : 'document'}`);
+        await handleAnimation(message, chatId, !!message.document, env);
+      } catch (error) {
+        console.error("处理动画时出错:", error);
+        await sendMessage(chatId, `❌ 处理动画时出错: ${error.message}`, env).catch(e => console.error("发送动画错误消息失败:", e));
+      }
     }
     // 处理其他所有文档类型
     else if (message.document) {
-      await handleDocument(message, chatId, env);
+      try {
+        console.log(`开始处理文档，mime类型: ${message.document.mime_type || '未知'}`);
+        await handleDocument(message, chatId, env);
+      } catch (error) {
+        console.error("处理文档时出错:", error);
+        await sendMessage(chatId, `❌ 处理文档时出错: ${error.message}`, env).catch(e => console.error("发送文档错误消息失败:", e));
+      }
+    } else {
+      console.log("收到无法处理的消息类型");
+      await sendMessage(chatId, "⚠️ 未能识别的消息类型。请发送图片、视频、音频或文档文件。", env);
     }
 
     return new Response('OK', { status: 200 });
@@ -119,48 +164,66 @@ async function handlePhoto(message, chatId, env) {
     const uploadUrl = new URL(IMG_BED_URL + "/upload");
     uploadUrl.searchParams.append('returnFormat', 'full');
 
-    if (AUTH_CODE) { // 检查从env获取的AUTH_CODE
+    // 准备请求头，把认证码放在头部而不是URL参数里
+    const headers = {};
+    if (AUTH_CODE) {
+      headers['Authorization'] = `Bearer ${AUTH_CODE}`;
+      // 同时保留URL参数认证方式，以防API要求
       uploadUrl.searchParams.append('authCode', AUTH_CODE);
     }
 
     console.log(`图片上传请求 URL: ${uploadUrl.toString()}`);
 
-    const uploadResponse = await fetch(uploadUrl, {
-      method: 'POST',
-      body: formData
-    });
-
-    const responseText = await uploadResponse.text();
-    console.log('图片上传原始响应:', responseText);
-
-    let uploadResult;
     try {
-      uploadResult = JSON.parse(responseText);
-    } catch (e) {
-      uploadResult = responseText;
-    }
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: headers,
+        body: formData
+      });
 
-    const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
-    const imgUrl = extractedResult.url;
-    // 使用提取的文件名或默认值
-    const actualFileName = extractedResult.fileName || fileName;
-    // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
-    const actualFileSize = extractedResult.fileSize || fileSize;
-
-    if (imgUrl) {
-      const msgText = `✅ 图片上传成功！\n\n` +
-                     `📄 文件名: ${actualFileName}\n` +
-                     `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                     `🔗 URL：${imgUrl}`;
+      console.log('图片上传状态码:', uploadResponse.status);
       
-      // 更新之前的消息而不是发送新消息
-      if (messageId) {
-        await editMessage(chatId, messageId, msgText, env);
-      } else {
-        await sendMessage(chatId, msgText, env);
+      const responseText = await uploadResponse.text();
+      console.log('图片上传原始响应:', responseText);
+
+      let uploadResult;
+      try {
+        uploadResult = JSON.parse(responseText);
+      } catch (e) {
+        console.error('解析响应JSON失败:', e);
+        uploadResult = responseText;
       }
-    } else {
-      const errorMsg = `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`;
+
+      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
+      const imgUrl = extractedResult.url;
+      // 使用提取的文件名或默认值
+      const actualFileName = extractedResult.fileName || fileName;
+      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      const actualFileSize = extractedResult.fileSize || fileSize;
+
+      if (imgUrl) {
+        const msgText = `✅ 图片上传成功！\n\n` +
+                       `📄 文件名: ${actualFileName}\n` +
+                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                       `🔗 URL：${imgUrl}`;
+        
+        // 更新之前的消息而不是发送新消息
+        if (messageId) {
+          await editMessage(chatId, messageId, msgText, env);
+        } else {
+          await sendMessage(chatId, msgText, env);
+        }
+      } else {
+        const errorMsg = `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
+      }
+    } catch (error) {
+      console.error('处理图片上传时出错:', error);
+      const errorMsg = `❌ 处理图片上传时出错: ${error.message}\n\n可能是图片太大或格式不支持。`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -231,6 +294,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
+        headers: AUTH_CODE ? { 'Authorization': `Bearer ${AUTH_CODE}` } : {},
         body: formData
       });
 
@@ -347,6 +411,7 @@ async function handleAudio(message, chatId, isDocument = false, env) {
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
+        headers: AUTH_CODE ? { 'Authorization': `Bearer ${AUTH_CODE}` } : {},
         body: formData
       });
 
@@ -463,6 +528,7 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
+        headers: AUTH_CODE ? { 'Authorization': `Bearer ${AUTH_CODE}` } : {},
         body: formData
       });
 
@@ -588,6 +654,7 @@ async function handleDocument(message, chatId, env) {
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
+        headers: AUTH_CODE ? { 'Authorization': `Bearer ${AUTH_CODE}` } : {},
         body: formData
       });
 
