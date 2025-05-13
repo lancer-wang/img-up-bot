@@ -161,8 +161,18 @@ async function handleRequest(request, env) {
         console.log(`开始处理视频，类型: ${message.video ? 'video' : 'document'}`);
         await handleVideo(message, chatId, !!message.document, env);
       } catch (error) {
-        console.error("处理视频时出错:", error);
-        await sendMessage(chatId, `❌ 处理视频时出错: ${error.message}`, env).catch(e => console.error("发送视频错误消息失败:", e));
+        console.error('处理视频时出错:', error);
+        let errorDetails = '';
+        if (error.message) {
+          errorDetails = `\n错误详情: ${error.message}`;
+        }
+        
+        const errorMsg = `❌ 处理视频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送视频\n2. 如果视频较大，可以尝试压缩后再发送\n3. 尝试将视频转换为MP4格式`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     }
     // 自动处理音频
@@ -173,8 +183,18 @@ async function handleRequest(request, env) {
         console.log(`开始处理音频，类型: ${message.audio ? 'audio' : 'document'}`);
         await handleAudio(message, chatId, !!message.document, env);
       } catch (error) {
-        console.error("处理音频时出错:", error);
-        await sendMessage(chatId, `❌ 处理音频时出错: ${error.message}`, env).catch(e => console.error("发送音频错误消息失败:", e));
+        console.error('处理音频时出错:', error);
+        let errorDetails = '';
+        if (error.message) {
+          errorDetails = `\n错误详情: ${error.message}`;
+        }
+        
+        const errorMsg = `❌ 处理音频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送音频\n2. 尝试将音频转换为MP3格式`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     }
     // 自动处理动画/GIF
@@ -185,8 +205,18 @@ async function handleRequest(request, env) {
         console.log(`开始处理动画，类型: ${message.animation ? 'animation' : 'document'}`);
         await handleAnimation(message, chatId, !!message.document, env);
       } catch (error) {
-        console.error("处理动画时出错:", error);
-        await sendMessage(chatId, `❌ 处理动画时出错: ${error.message}`, env).catch(e => console.error("发送动画错误消息失败:", e));
+        console.error('处理动画时出错:', error);
+        let errorDetails = '';
+        if (error.message) {
+          errorDetails = `\n错误详情: ${error.message}`;
+        }
+        
+        const errorMsg = `❌ 处理动画时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送GIF\n2. 尝试将动画转换为标准GIF格式`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     }
     // 处理其他所有文档类型
@@ -195,8 +225,18 @@ async function handleRequest(request, env) {
         console.log(`开始处理文档，mime类型: ${message.document.mime_type || '未知'}`);
         await handleDocument(message, chatId, env);
       } catch (error) {
-        console.error("处理文档时出错:", error);
-        await sendMessage(chatId, `❌ 处理文档时出错: ${error.message}`, env).catch(e => console.error("发送文档错误消息失败:", e));
+        console.error('处理文件时出错:', error);
+        let errorDetails = '';
+        if (error.message) {
+          errorDetails = `\n错误详情: ${error.message}`;
+        }
+        
+        const errorMsg = `❌ 处理文件时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送文件\n2. 如果文件较大，可以尝试压缩后再发送`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     } else {
       console.log("收到无法处理的消息类型");
@@ -427,7 +467,12 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       }
     } catch (error) {
       console.error('处理视频时出错:', error);
-      const errorMsg = `❌ 处理视频时出错: ${error.message}\n\n可能是视频太大或格式不支持。`;
+      let errorDetails = '';
+      if (error.message) {
+        errorDetails = `\n错误详情: ${error.message}`;
+      }
+      
+      const errorMsg = `❌ 处理视频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送视频\n2. 如果视频较大，可以尝试压缩后再发送\n3. 尝试将视频转换为MP4格式`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -435,7 +480,13 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       }
     }
   } else {
-    const errorMsg = '❌ 无法获取视频信息，请稍后再试。';
+    let errorDetails = '';
+    if (fileInfo.error) {
+      errorDetails = `\n错误详情: ${fileInfo.error}`;
+      console.error(`获取视频文件信息失败: ${fileInfo.error}`);
+    }
+    
+    const errorMsg = `❌ 无法获取视频信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送视频\n2. 如果视频较大，可以尝试压缩后再发送\n3. 尝试将视频转换为MP4格式`;
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -544,7 +595,12 @@ async function handleAudio(message, chatId, isDocument = false, env) {
       }
     } catch (error) {
       console.error('处理音频时出错:', error);
-      const errorMsg = `❌ 处理音频时出错: ${error.message}\n\n可能是音频太大或格式不支持。`;
+      let errorDetails = '';
+      if (error.message) {
+        errorDetails = `\n错误详情: ${error.message}`;
+      }
+      
+      const errorMsg = `❌ 处理音频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送音频\n2. 尝试将音频转换为MP3格式`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -552,7 +608,13 @@ async function handleAudio(message, chatId, isDocument = false, env) {
       }
     }
   } else {
-    const errorMsg = '❌ 无法获取音频信息，请稍后再试。';
+    let errorDetails = '';
+    if (fileInfo.error) {
+      errorDetails = `\n错误详情: ${fileInfo.error}`;
+      console.error(`获取音频文件信息失败: ${fileInfo.error}`);
+    }
+    
+    const errorMsg = `❌ 无法获取音频信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送音频\n2. 尝试将音频转换为MP3格式`;
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -661,7 +723,12 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
       }
     } catch (error) {
       console.error('处理动画时出错:', error);
-      const errorMsg = `❌ 处理动画时出错: ${error.message}\n\n可能是文件太大或格式不支持。`;
+      let errorDetails = '';
+      if (error.message) {
+        errorDetails = `\n错误详情: ${error.message}`;
+      }
+      
+      const errorMsg = `❌ 处理动画时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送GIF\n2. 尝试将动画转换为标准GIF格式`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -669,7 +736,13 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
       }
     }
   } else {
-    const errorMsg = '❌ 无法获取动画信息，请稍后再试。';
+    let errorDetails = '';
+    if (fileInfo.error) {
+      errorDetails = `\n错误详情: ${fileInfo.error}`;
+      console.error(`获取动画文件信息失败: ${fileInfo.error}`);
+    }
+    
+    const errorMsg = `❌ 无法获取动画信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送GIF\n2. 尝试将动画转换为标准GIF格式`;
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -807,7 +880,12 @@ async function handleDocument(message, chatId, env) {
       }
     } catch (error) {
       console.error('处理文件时出错:', error);
-      const errorMsg = `❌ 处理文件时出错: ${error.message}\n\n可能是文件太大或格式不支持。`;
+      let errorDetails = '';
+      if (error.message) {
+        errorDetails = `\n错误详情: ${error.message}`;
+      }
+      
+      const errorMsg = `❌ 处理文件时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送文件\n2. 如果文件较大，可以尝试压缩后再发送`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -815,7 +893,13 @@ async function handleDocument(message, chatId, env) {
       }
     }
   } else {
-    const errorMsg = '❌ 无法获取文件信息，请稍后再试。';
+    let errorDetails = '';
+    if (fileInfo.error) {
+      errorDetails = `\n错误详情: ${fileInfo.error}`;
+      console.error(`获取文档文件信息失败: ${fileInfo.error}`);
+    }
+    
+    const errorMsg = `❌ 无法获取文件信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送文件\n2. 如果文件较大，可以尝试压缩后再发送`;
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -949,8 +1033,48 @@ function extractFileName(url) {
 async function getFile(fileId, env) {
   const BOT_TOKEN = env.BOT_TOKEN;
   const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
-  const response = await fetch(`${API_URL}/getFile?file_id=${fileId}`);
-  return await response.json();
+  
+  // 添加重试逻辑
+  let retries = 0;
+  const maxRetries = 3;
+  let lastError = null;
+  
+  while (retries < maxRetries) {
+    try {
+      console.log(`尝试获取文件信息，fileId: ${fileId.substring(0, 10)}...，第${retries + 1}次尝试`);
+      const response = await fetch(`${API_URL}/getFile?file_id=${fileId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Telegram API返回错误: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (!result.ok) {
+        throw new Error(`Telegram API返回非成功结果: ${JSON.stringify(result)}`);
+      }
+      
+      if (!result.result || !result.result.file_path) {
+        throw new Error(`Telegram API返回结果缺少file_path: ${JSON.stringify(result)}`);
+      }
+      
+      return result;
+    } catch (error) {
+      lastError = error;
+      console.error(`获取文件信息失败，第${retries + 1}次尝试: ${error.message}`);
+      retries++;
+      
+      if (retries < maxRetries) {
+        // 等待时间随重试次数增加
+        const waitTime = 1000 * retries; // 1秒, 2秒, 3秒...
+        console.log(`等待${waitTime / 1000}秒后重试...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+  
+  console.error(`获取文件信息失败，已达到最大重试次数(${maxRetries}): ${lastError.message}`);
+  return { ok: false, error: `获取文件信息失败: ${lastError.message}` };
 }
 
 // sendMessage 函数，接收 env 对象
