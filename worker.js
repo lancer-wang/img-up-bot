@@ -116,7 +116,7 @@ async function handlePhoto(message, chatId, env) {
     const formData = new FormData();
     formData.append('file', new File([imgBuffer], fileName, { type: 'image/jpeg' }));
 
-    const uploadUrl = new URL(IMG_BED_URL);
+    const uploadUrl = new URL(IMG_BED_URL + "/upload");
     uploadUrl.searchParams.append('returnFormat', 'full');
 
     if (AUTH_CODE) { // 检查从env获取的AUTH_CODE
@@ -220,7 +220,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       const mimeType = isDocument ? message.document.mime_type || 'video/mp4' : 'video/mp4';
       formData.append('file', new File([videoBuffer], fileName, { type: mimeType }));
 
-      const uploadUrl = new URL(IMG_BED_URL);
+      const uploadUrl = new URL(IMG_BED_URL + "/upload");
       uploadUrl.searchParams.append('returnFormat', 'full');
 
       if (AUTH_CODE) { // 检查从env获取的AUTH_CODE
@@ -336,7 +336,7 @@ async function handleAudio(message, chatId, isDocument = false, env) {
         : (message.audio.mime_type || 'audio/mpeg');
       formData.append('file', new File([audioBuffer], fileName, { type: mimeType }));
 
-      const uploadUrl = new URL(IMG_BED_URL);
+      const uploadUrl = new URL(IMG_BED_URL + "/upload");
       uploadUrl.searchParams.append('returnFormat', 'full');
 
       if (AUTH_CODE) {
@@ -452,7 +452,7 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
         : (message.animation.mime_type || 'image/gif');
       formData.append('file', new File([animBuffer], fileName, { type: mimeType }));
 
-      const uploadUrl = new URL(IMG_BED_URL);
+      const uploadUrl = new URL(IMG_BED_URL + "/upload");
       uploadUrl.searchParams.append('returnFormat', 'full');
 
       if (AUTH_CODE) {
@@ -577,7 +577,7 @@ async function handleDocument(message, chatId, env) {
       
       formData.append('file', new File([fileBuffer], safeFileName, { type: safeMimeType }));
 
-      const uploadUrl = new URL(IMG_BED_URL);
+      const uploadUrl = new URL(IMG_BED_URL + "/upload");
       uploadUrl.searchParams.append('returnFormat', 'full');
 
       if (AUTH_CODE) {
