@@ -87,7 +87,9 @@ async function handlePhoto(message, chatId, env) {
   const AUTH_CODE = env.AUTH_CODE;
   const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
 
-  await sendMessage(chatId, '🔄 正在处理您的图片，请稍候...', env);
+  // 发送处理中消息并获取消息ID以便后续更新
+  const sendResult = await sendMessage(chatId, '🔄 正在处理您的图片，请稍候...', env);
+  const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env); // 传递env
 
@@ -97,9 +99,22 @@ async function handlePhoto(message, chatId, env) {
 
     const imgResponse = await fetch(fileUrl);
     const imgBuffer = await imgResponse.arrayBuffer();
+    const fileSize = imgBuffer.byteLength;
+    const fileName = `image_${Date.now()}.jpg`;
+
+    // 添加大小检查
+    if (fileSize / (1024 * 1024) > 2048) { // 2GB (2048MB)
+      const warningMsg = `⚠️ 图片太大 (${formatFileSize(fileSize)})，超出2GB限制，无法上传。`;
+      if (messageId) {
+        await editMessage(chatId, messageId, warningMsg, env);
+      } else {
+        await sendMessage(chatId, warningMsg, env);
+      }
+      return;
+    }
 
     const formData = new FormData();
-    formData.append('file', new File([imgBuffer], 'image.jpg', { type: 'image/jpeg' }));
+    formData.append('file', new File([imgBuffer], fileName, { type: 'image/jpeg' }));
 
     const uploadUrl = new URL(IMG_BED_URL);
     uploadUrl.searchParams.append('returnFormat', 'full');
@@ -125,18 +140,40 @@ async function handlePhoto(message, chatId, env) {
       uploadResult = responseText;
     }
 
-    let imgUrl = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
+    const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
+    const imgUrl = extractedResult.url;
+    // 使用提取的文件名或默认值
+    const actualFileName = extractedResult.fileName || fileName;
+    // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+    const actualFileSize = extractedResult.fileSize || fileSize;
 
     if (imgUrl) {
-      const plainLink = imgUrl;
       const msgText = `✅ 图片上传成功！\n\n` +
-                     `🔗 原始链接:\n${plainLink}\n\n`;
-      await sendMessage(chatId, msgText, env);
+                     `📄 文件名: ${actualFileName}\n` +
+                     `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                     `🔗 URL：${imgUrl}`;
+      
+      // 更新之前的消息而不是发送新消息
+      if (messageId) {
+        await editMessage(chatId, messageId, msgText, env);
+      } else {
+        await sendMessage(chatId, msgText, env);
+      }
     } else {
-      await sendMessage(chatId, `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`, env);
+      const errorMsg = `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`;
+      if (messageId) {
+        await editMessage(chatId, messageId, errorMsg, env);
+      } else {
+        await sendMessage(chatId, errorMsg, env);
+      }
     }
   } else {
-    await sendMessage(chatId, '❌ 无法获取图片信息，请稍后再试。', env);
+    const errorMsg = '❌ 无法获取图片信息，请稍后再试。';
+    if (messageId) {
+      await editMessage(chatId, messageId, errorMsg, env);
+    } else {
+      await sendMessage(chatId, errorMsg, env);
+    }
   }
 }
 
@@ -151,7 +188,9 @@ async function handleVideo(message, chatId, isDocument = false, env) {
   const AUTH_CODE = env.AUTH_CODE;
   const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
 
-  await sendMessage(chatId, '🔄 正在处理您的视频，请稍候...\n(视频处理可能需要较长时间，取决于视频大小)', env);
+  // 发送处理中消息并获取消息ID以便后续更新
+  const sendResult = await sendMessage(chatId, `🔄 正在处理您的视频 "${fileName}"，请稍候...`, env);
+  const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env); // 传递env
 
@@ -164,10 +203,17 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       if (!videoResponse.ok) throw new Error(`获取视频失败: ${videoResponse.status}`);
 
       const videoBuffer = await videoResponse.arrayBuffer();
-      const videoSize = videoBuffer.byteLength / (1024 * 1024); // MB
-
-      if (videoSize > 5120) { // 增加到5GB (5120MB)
-        await sendMessage(chatId, `⚠️ 视频太大 (${videoSize.toFixed(2)}MB)，可能无法在Worker环境中处理或上传。尝试上传中...`, env);
+      const videoSize = videoBuffer.byteLength;
+      const fileSizeFormatted = formatFileSize(videoSize);
+      
+      if (videoSize / (1024 * 1024) > 2048) { // 2GB (2048MB)
+        const warningMsg = `⚠️ 视频太大 (${fileSizeFormatted})，超出2GB限制，无法上传。`;
+        if (messageId) {
+          await editMessage(chatId, messageId, warningMsg, env);
+        } else {
+          await sendMessage(chatId, warningMsg, env);
+        }
+        return;
       }
 
       const formData = new FormData();
@@ -198,22 +244,49 @@ async function handleVideo(message, chatId, isDocument = false, env) {
         uploadResult = responseText;
       }
 
-      let videoUrl = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
+      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
+      const videoUrl = extractedResult.url;
+      // 使用提取的文件名或默认值
+      const actualFileName = extractedResult.fileName || fileName;
+      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      const actualFileSize = extractedResult.fileSize || videoSize;
 
       if (videoUrl) {
-        const plainLink = videoUrl;
         const msgText = `✅ 视频上传成功！\n\n` +
-                       `🔗 下载链接:\n${plainLink}\n\n`;
-        await sendMessage(chatId, msgText, env);
+                       `📄 文件名: ${actualFileName}\n` +
+                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                       `🔗 URL：${videoUrl}`;
+        
+        // 更新之前的消息而不是发送新消息
+        if (messageId) {
+          await editMessage(chatId, messageId, msgText, env);
+        } else {
+          await sendMessage(chatId, msgText, env);
+        }
       } else {
-        await sendMessage(chatId, `⚠️ 无法从图床获取视频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`, env);
+        const errorMsg = `⚠️ 无法从图床获取视频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     } catch (error) {
       console.error('处理视频时出错:', error);
-      await sendMessage(chatId, `❌ 处理视频时出错: ${error.message}\n\n可能是视频太大或格式不支持。`, env);
+      const errorMsg = `❌ 处理视频时出错: ${error.message}\n\n可能是视频太大或格式不支持。`;
+      if (messageId) {
+        await editMessage(chatId, messageId, errorMsg, env);
+      } else {
+        await sendMessage(chatId, errorMsg, env);
+      }
     }
   } else {
-    await sendMessage(chatId, '❌ 无法获取视频信息，请稍后再试。', env);
+    const errorMsg = '❌ 无法获取视频信息，请稍后再试。';
+    if (messageId) {
+      await editMessage(chatId, messageId, errorMsg, env);
+    } else {
+      await sendMessage(chatId, errorMsg, env);
+    }
   }
 }
 
@@ -229,7 +302,9 @@ async function handleAudio(message, chatId, isDocument = false, env) {
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
 
-  await sendMessage(chatId, '🔄 正在处理您的音频，请稍候...', env);
+  // 发送处理中消息并获取消息ID以便后续更新
+  const sendResult = await sendMessage(chatId, `🔄 正在处理您的音频 "${fileName}"，请稍候...`, env);
+  const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env);
 
@@ -242,10 +317,17 @@ async function handleAudio(message, chatId, isDocument = false, env) {
       if (!audioResponse.ok) throw new Error(`获取音频失败: ${audioResponse.status}`);
 
       const audioBuffer = await audioResponse.arrayBuffer();
-      const audioSize = audioBuffer.byteLength / (1024 * 1024); // MB
+      const audioSize = audioBuffer.byteLength;
+      const fileSizeFormatted = formatFileSize(audioSize);
       
-      if (audioSize > 5120) { // 增加到5GB (5120MB)
-        await sendMessage(chatId, `⚠️ 音频太大 (${audioSize.toFixed(2)}MB)，可能无法在Worker环境中处理或上传。尝试上传中...`, env);
+      if (audioSize / (1024 * 1024) > 2048) { // 2GB (2048MB)
+        const warningMsg = `⚠️ 音频太大 (${fileSizeFormatted})，超出2GB限制，无法上传。`;
+        if (messageId) {
+          await editMessage(chatId, messageId, warningMsg, env);
+        } else {
+          await sendMessage(chatId, warningMsg, env);
+        }
+        return;
       }
 
       const formData = new FormData();
@@ -278,22 +360,49 @@ async function handleAudio(message, chatId, isDocument = false, env) {
         uploadResult = responseText;
       }
 
-      let audioUrl = extractUrlFromResult(uploadResult, IMG_BED_URL);
+      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
+      const audioUrl = extractedResult.url;
+      // 使用提取的文件名或默认值
+      const actualFileName = extractedResult.fileName || fileName;
+      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      const actualFileSize = extractedResult.fileSize || audioSize;
 
       if (audioUrl) {
-        const plainLink = audioUrl;
         const msgText = `✅ 音频上传成功！\n\n` +
-                       `🔗 下载链接:\n${plainLink}\n\n`;
-        await sendMessage(chatId, msgText, env);
+                       `📄 文件名: ${actualFileName}\n` +
+                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                       `🔗 URL：${audioUrl}`;
+        
+        // 更新之前的消息而不是发送新消息
+        if (messageId) {
+          await editMessage(chatId, messageId, msgText, env);
+        } else {
+          await sendMessage(chatId, msgText, env);
+        }
       } else {
-        await sendMessage(chatId, `⚠️ 无法从图床获取音频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`, env);
+        const errorMsg = `⚠️ 无法从图床获取音频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     } catch (error) {
       console.error('处理音频时出错:', error);
-      await sendMessage(chatId, `❌ 处理音频时出错: ${error.message}\n\n可能是音频太大或格式不支持。`, env);
+      const errorMsg = `❌ 处理音频时出错: ${error.message}\n\n可能是音频太大或格式不支持。`;
+      if (messageId) {
+        await editMessage(chatId, messageId, errorMsg, env);
+      } else {
+        await sendMessage(chatId, errorMsg, env);
+      }
     }
   } else {
-    await sendMessage(chatId, '❌ 无法获取音频信息，请稍后再试。', env);
+    const errorMsg = '❌ 无法获取音频信息，请稍后再试。';
+    if (messageId) {
+      await editMessage(chatId, messageId, errorMsg, env);
+    } else {
+      await sendMessage(chatId, errorMsg, env);
+    }
   }
 }
 
@@ -309,7 +418,9 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
 
-  await sendMessage(chatId, '🔄 正在处理您的动画/GIF，请稍候...', env);
+  // 发送处理中消息并获取消息ID以便后续更新
+  const sendResult = await sendMessage(chatId, `🔄 正在处理您的动画/GIF "${fileName}"，请稍候...`, env);
+  const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env);
 
@@ -322,10 +433,17 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
       if (!animResponse.ok) throw new Error(`获取动画失败: ${animResponse.status}`);
 
       const animBuffer = await animResponse.arrayBuffer();
-      const animSize = animBuffer.byteLength / (1024 * 1024); // MB
+      const animSize = animBuffer.byteLength;
+      const fileSizeFormatted = formatFileSize(animSize);
       
-      if (animSize > 5120) { // 增加到5GB (5120MB)
-        await sendMessage(chatId, `⚠️ 动画太大 (${animSize.toFixed(2)}MB)，可能无法在Worker环境中处理或上传。尝试上传中...`, env);
+      if (animSize / (1024 * 1024) > 2048) { // 2GB (2048MB)
+        const warningMsg = `⚠️ 动画太大 (${fileSizeFormatted})，超出2GB限制，无法上传。`;
+        if (messageId) {
+          await editMessage(chatId, messageId, warningMsg, env);
+        } else {
+          await sendMessage(chatId, warningMsg, env);
+        }
+        return;
       }
 
       const formData = new FormData();
@@ -358,22 +476,49 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
         uploadResult = responseText;
       }
 
-      let animUrl = extractUrlFromResult(uploadResult, IMG_BED_URL);
+      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
+      const animUrl = extractedResult.url;
+      // 使用提取的文件名或默认值
+      const actualFileName = extractedResult.fileName || fileName;
+      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      const actualFileSize = extractedResult.fileSize || animSize;
 
       if (animUrl) {
-        const plainLink = animUrl;
         const msgText = `✅ 动画/GIF上传成功！\n\n` +
-                       `🔗 链接:\n${plainLink}\n\n`;
-        await sendMessage(chatId, msgText, env);
+                       `📄 文件名: ${actualFileName}\n` +
+                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                       `🔗 URL：${animUrl}`;
+        
+        // 更新之前的消息而不是发送新消息
+        if (messageId) {
+          await editMessage(chatId, messageId, msgText, env);
+        } else {
+          await sendMessage(chatId, msgText, env);
+        }
       } else {
-        await sendMessage(chatId, `⚠️ 无法从图床获取动画链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`, env);
+        const errorMsg = `⚠️ 无法从图床获取动画链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     } catch (error) {
       console.error('处理动画时出错:', error);
-      await sendMessage(chatId, `❌ 处理动画时出错: ${error.message}\n\n可能是文件太大或格式不支持。`, env);
+      const errorMsg = `❌ 处理动画时出错: ${error.message}\n\n可能是文件太大或格式不支持。`;
+      if (messageId) {
+        await editMessage(chatId, messageId, errorMsg, env);
+      } else {
+        await sendMessage(chatId, errorMsg, env);
+      }
     }
   } else {
-    await sendMessage(chatId, '❌ 无法获取动画信息，请稍后再试。', env);
+    const errorMsg = '❌ 无法获取动画信息，请稍后再试。';
+    if (messageId) {
+      await editMessage(chatId, messageId, errorMsg, env);
+    } else {
+      await sendMessage(chatId, errorMsg, env);
+    }
   }
 }
 
@@ -390,7 +535,10 @@ async function handleDocument(message, chatId, env) {
 
   // 获取文件类型图标
   const fileIcon = getFileIcon(fileName, mimeType);
-  await sendMessage(chatId, `${fileIcon} 正在处理您的文件 "${fileName}"，请稍候...`, env);
+  
+  // 发送处理中消息并获取消息ID以便后续更新
+  const sendResult = await sendMessage(chatId, `${fileIcon} 正在处理您的文件 "${fileName}"，请稍候...`, env);
+  const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env);
 
@@ -403,10 +551,17 @@ async function handleDocument(message, chatId, env) {
       if (!fileResponse.ok) throw new Error(`获取文件失败: ${fileResponse.status}`);
 
       const fileBuffer = await fileResponse.arrayBuffer();
-      const fileSize = fileBuffer.byteLength / (1024 * 1024); // MB
+      const fileSize = fileBuffer.byteLength;
+      const fileSizeFormatted = formatFileSize(fileSize);
 
-      if (fileSize > 5120) { // 增加到5GB (5120MB)
-        await sendMessage(chatId, `⚠️ 文件太大 (${fileSize.toFixed(2)}MB)，可能无法在Worker环境中处理或上传。尝试上传中...`, env);
+      if (fileSize / (1024 * 1024) > 2048) { // 2GB (2048MB)
+        const warningMsg = `⚠️ 文件太大 (${fileSizeFormatted})，超出2GB限制，无法上传。`;
+        if (messageId) {
+          await editMessage(chatId, messageId, warningMsg, env);
+        } else {
+          await sendMessage(chatId, warningMsg, env);
+        }
+        return;
       }
 
       const formData = new FormData();
@@ -446,39 +601,69 @@ async function handleDocument(message, chatId, env) {
         uploadResult = responseText;
       }
 
-      let fileUrl2 = extractUrlFromResult(uploadResult, IMG_BED_URL);
+      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
+      const fileUrl2 = extractedResult.url;
+      // 使用提取的文件名或默认值
+      const actualFileName = extractedResult.fileName || safeFileName;
+      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      const actualFileSize = extractedResult.fileSize || fileSize;
 
       if (fileUrl2) {
-        const plainLink = fileUrl2;
         const msgText = `✅ 文件上传成功！\n\n` +
-                       `📄 文件名: ${fileName}\n` +
-                       `📦 文件大小: ${formatFileSize(fileBuffer.byteLength)}\n` +
-                       `🔗 下载链接:\n${plainLink}\n\n`;
-        await sendMessage(chatId, msgText, env);
+                       `📄 文件名: ${actualFileName}\n` +
+                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                       `🔗 URL：${fileUrl2}`;
+        
+        // 更新之前的消息而不是发送新消息
+        if (messageId) {
+          await editMessage(chatId, messageId, msgText, env);
+        } else {
+          await sendMessage(chatId, msgText, env);
+        }
       } else {
-        await sendMessage(chatId, `⚠️ 无法从图床获取文件链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`, env);
+        const errorMsg = `⚠️ 无法从图床获取文件链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        if (messageId) {
+          await editMessage(chatId, messageId, errorMsg, env);
+        } else {
+          await sendMessage(chatId, errorMsg, env);
+        }
       }
     } catch (error) {
       console.error('处理文件时出错:', error);
-      await sendMessage(chatId, `❌ 处理文件时出错: ${error.message}\n\n可能是文件太大或格式不支持。`, env);
+      const errorMsg = `❌ 处理文件时出错: ${error.message}\n\n可能是文件太大或格式不支持。`;
+      if (messageId) {
+        await editMessage(chatId, messageId, errorMsg, env);
+      } else {
+        await sendMessage(chatId, errorMsg, env);
+      }
     }
   } else {
-    await sendMessage(chatId, '❌ 无法获取文件信息，请稍后再试。', env);
+    const errorMsg = '❌ 无法获取文件信息，请稍后再试。';
+    if (messageId) {
+      await editMessage(chatId, messageId, errorMsg, env);
+    } else {
+      await sendMessage(chatId, errorMsg, env);
+    }
   }
 }
 
 // 辅助函数：从图床返回结果中提取URL，接收基础URL
 function extractUrlFromResult(result, imgBedUrl) {
   let url = '';
+  let fileName = '';
+  let fileSize = 0;
+  
   // 尝试从传入的 IMG_BED_URL 获取 origin
   let baseUrl = 'https://your.default.domain'; // 提供一个备用基础URL
   try {
-      if (imgBedUrl && (imgBedUrl.startsWith('https://') || imgBedUrl.startsWith('http://'))) {
-         baseUrl = new URL(imgBedUrl).origin;
-      }
+    if (imgBedUrl && (imgBedUrl.startsWith('https://') || imgBedUrl.startsWith('http://'))) {
+      baseUrl = new URL(imgBedUrl).origin;
+    }
   } catch (e) {
-      console.error("无法解析 IMG_BED_URL:", imgBedUrl, e);
+    console.error("无法解析 IMG_BED_URL:", imgBedUrl, e);
   }
+
+  console.log("提取URL，结果类型:", typeof result, "值:", JSON.stringify(result).substring(0, 200));
 
   // 处理可能的错误响应
   if (typeof result === 'string' && result.includes("The string did not match the expected pattern")) {
@@ -486,30 +671,101 @@ function extractUrlFromResult(result, imgBedUrl) {
     // 尝试从错误响应中提取可能的URL
     const urlMatch = result.match(/(https?:\/\/[^\s"]+)/);
     if (urlMatch) {
-      return urlMatch[0];
+      return { url: urlMatch[0], fileName: '', fileSize: 0 };
     }
   }
 
+  // 优先处理 [{"src": "/file/path.jpg"}] 这样的响应格式
   if (Array.isArray(result) && result.length > 0) {
     const item = result[0];
-    if (item.url) url = item.url;
-    else if (item.src) url = item.src.startsWith('http') ? item.src : `${baseUrl}${item.src}`; // 使用动态baseUrl
-    else if (typeof item === 'string') url = item.startsWith('http') ? item : `${baseUrl}/file/${item}`; // 使用动态baseUrl
-  }
-  else if (result && typeof result === 'object') {
-    if (result.url) url = result.url;
-    else if (result.src) url = result.src.startsWith('http') ? result.src : `${baseUrl}${result.src}`; // 使用动态baseUrl
-    else if (result.file) url = `${baseUrl}/file/${result.file}`; // 使用动态baseUrl
-    else if (result.data && result.data.url) url = result.data.url;
-  }
-  else if (typeof result === 'string') {
+    if (item.url) {
+      url = item.url;
+      fileName = item.fileName || extractFileName(url);
+      fileSize = item.fileSize || 0;
+    } else if (item.src) {
+      // 特别处理以 /file/ 开头的路径
+      if (item.src.startsWith('/file/')) {
+        url = `${baseUrl}${item.src}`;
+        fileName = extractFileName(item.src);
+      } else if (item.src.startsWith('/')) {
+        url = `${baseUrl}${item.src}`;
+        fileName = extractFileName(item.src);
+      } else if (item.src.startsWith('http')) {
+        url = item.src;
+        fileName = extractFileName(item.src);
+      } else {
+        url = `${baseUrl}/${item.src}`;
+        fileName = extractFileName(item.src);
+      }
+      fileSize = item.fileSize || 0;
+    } else if (typeof item === 'string') {
+      url = item.startsWith('http') ? item : `${baseUrl}/file/${item}`;
+      fileName = extractFileName(item);
+    }
+  } else if (result && typeof result === 'object') {
+    if (result.url) {
+      url = result.url;
+      fileName = result.fileName || extractFileName(url);
+      fileSize = result.fileSize || 0;
+    } else if (result.src) {
+      if (result.src.startsWith('/file/')) {
+        url = `${baseUrl}${result.src}`;
+        fileName = extractFileName(result.src);
+      } else if (result.src.startsWith('/')) {
+        url = `${baseUrl}${result.src}`;
+        fileName = extractFileName(result.src);
+      } else if (result.src.startsWith('http')) {
+        url = result.src;
+        fileName = extractFileName(result.src);
+      } else {
+        url = `${baseUrl}/${result.src}`;
+        fileName = extractFileName(result.src);
+      }
+      fileSize = result.fileSize || 0;
+    } else if (result.file) {
+      url = `${baseUrl}/file/${result.file}`;
+      fileName = result.fileName || extractFileName(result.file);
+      fileSize = result.fileSize || 0;
+    } else if (result.data && result.data.url) {
+      url = result.data.url;
+      fileName = result.data.fileName || extractFileName(url);
+      fileSize = result.data.fileSize || 0;
+    }
+  } else if (typeof result === 'string') {
     if (result.startsWith('http://') || result.startsWith('https://')) {
-        url = result;
+      url = result;
+      fileName = extractFileName(result);
     } else {
-        url = `${baseUrl}/file/${result}`; // 使用动态baseUrl
+      url = `${baseUrl}/file/${result}`;
+      fileName = extractFileName(result);
     }
   }
-  return url;
+
+  console.log("提取的最终URL:", url);
+  return { url, fileName, fileSize };
+}
+
+// 辅助函数：从URL中提取文件名
+function extractFileName(url) {
+  if (!url) return '';
+  
+  // 先尝试取最后的部分
+  let parts = url.split('/');
+  let fileName = parts[parts.length - 1];
+  
+  // 如果有查询参数，去掉查询参数
+  fileName = fileName.split('?')[0];
+  
+  // 如果没有扩展名，尝试基于URL结构猜测
+  if (!fileName.includes('.') && url.includes('/file/')) {
+    fileName = url.split('/file/')[1].split('?')[0];
+    // 如果还是没有扩展名，可能需要基于内容类型添加一个默认扩展名
+    if (!fileName.includes('.')) {
+      // 由于没有内容类型信息，暂时不添加扩展名
+    }
+  }
+  
+  return fileName || '未知文件';
 }
 
 // getFile 函数，接收 env 对象
@@ -536,6 +792,34 @@ async function sendMessage(chatId, text, env) {
     }),
   });
   return await response.json();
+}
+
+// editMessage 函数，用于更新已发送的消息
+async function editMessage(chatId, messageId, text, env) {
+  if (!messageId) return null;
+  
+  const BOT_TOKEN = env.BOT_TOKEN;
+  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
+  
+  try {
+    const response = await fetch(`${API_URL}/editMessageText`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text: text,
+        parse_mode: 'HTML',
+      }),
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('编辑消息失败:', error);
+    // 如果编辑失败，尝试发送新消息
+    return sendMessage(chatId, text, env);
+  }
 }
 
 // 获取文件类型图标
