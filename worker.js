@@ -1,6 +1,13 @@
 export default {
   async fetch(request, env, ctx) {
     console.log("收到请求：", request.method, request.url);
+    
+    // 特殊路径处理：设置Webhook
+    const url = new URL(request.url);
+    if (url.pathname === '/setup-webhook') {
+      return handleSetupWebhook(request, env);
+    }
+    
     try {
       return handleRequest(request, env);
     } catch (error) {
@@ -9,6 +16,50 @@ export default {
     }
   }
 };
+
+// Webhook设置处理函数
+async function handleSetupWebhook(request, env) {
+  if (request.method !== 'GET') {
+    return new Response('只接受GET请求', { status: 405 });
+  }
+  
+  const BOT_TOKEN = env.BOT_TOKEN;
+  
+  if (!BOT_TOKEN) {
+    return new Response('BOT_TOKEN 未配置', { status: 500 });
+  }
+  
+  const url = new URL(request.url);
+  const workerUrl = `${url.protocol}//${url.hostname}`;
+  
+  console.log(`设置Webhook，Worker URL: ${workerUrl}`);
+  
+  try {
+    const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
+    const response = await fetch(`${API_URL}/setWebhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: workerUrl,
+        allowed_updates: ["message"]
+      }),
+    });
+    
+    const result = await response.json();
+    console.log('Webhook设置结果:', result);
+    
+    if (result.ok) {
+      return new Response(`Webhook设置成功: ${workerUrl}`, { status: 200 });
+    } else {
+      return new Response(`Webhook设置失败: ${JSON.stringify(result)}`, { status: 500 });
+    }
+  } catch (error) {
+    console.error('设置Webhook时出错:', error);
+    return new Response(`设置Webhook时出错: ${error.message}`, { status: 500 });
+  }
+}
 
 // 主要处理逻辑函数，现在接收 env 对象作为参数
 async function handleRequest(request, env) {
@@ -44,11 +95,31 @@ async function handleRequest(request, env) {
 
     // 处理命令
     if (text && text.startsWith('/')) {
+      console.log("收到命令:", text);
       const command = text.split(' ')[0];
       if (command === '/start') {
-        await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等多种格式。支持最大50Mb的文件上传(telegram bot自身限制)。', env);
+        try {
+          console.log("开始处理/start命令");
+          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等多种格式。支持最大50Mb的文件上传(telegram bot自身限制)。', env);
+          console.log("/start命令响应:", JSON.stringify(result).substring(0, 200));
+        } catch (error) {
+          console.error("发送/start消息失败:", error);
+        }
       } else if (command === '/help') {
-        await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大50Mb的文件上传（受Cloudflare Worker限制，超大文件可能会失败）。\n4. 无需输入其他命令，无需切换模式。\n5. 此机器人由 @uki0x 开发，支持多种文件类型上传', env);
+        try {
+          console.log("开始处理/help命令");
+          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大50Mb的文件上传（受Cloudflare Worker限制，超大文件可能会失败）。\n4. 无需输入其他命令，无需切换模式。\n5. 此机器人由 @uki0x 开发，支持多种文件类型上传', env);
+          console.log("/help命令响应:", JSON.stringify(result).substring(0, 200));
+        } catch (error) {
+          console.error("发送/help消息失败:", error);
+        }
+      } else {
+        console.log("未知命令:", command);
+        try {
+          await sendMessage(chatId, `未知命令：${command}。请使用 /start 或 /help 获取帮助。`, env);
+        } catch (error) {
+          console.error("发送未知命令消息失败:", error);
+        }
       }
       return new Response('OK', { status: 200 });
     }
@@ -846,19 +917,42 @@ async function getFile(fileId, env) {
 // sendMessage 函数，接收 env 对象
 async function sendMessage(chatId, text, env) {
   const BOT_TOKEN = env.BOT_TOKEN;
-  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
-  const response = await fetch(`${API_URL}/sendMessage`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  
+  // 确保BOT_TOKEN可用
+  if (!BOT_TOKEN) {
+    console.error("sendMessage: BOT_TOKEN不可用");
+    return { ok: false, error: "BOT_TOKEN not available" };
+  }
+  
+  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
+  console.log(`准备发送消息到聊天ID: ${chatId}, API URL: ${API_URL.substring(0, 40)}...`);
+  
+  try {
+    const body = JSON.stringify({
       chat_id: chatId,
       text: text,
       parse_mode: 'HTML',
-    }),
-  });
-  return await response.json();
+    });
+    
+    console.log(`请求体: ${body.substring(0, 50)}...`);
+    
+    const response = await fetch(`${API_URL}/sendMessage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: body,
+    });
+    
+    console.log(`Telegram API响应状态: ${response.status}`);
+    const responseData = await response.json();
+    console.log(`Telegram API响应数据: ${JSON.stringify(responseData).substring(0, 100)}...`);
+    
+    return responseData;
+  } catch (error) {
+    console.error(`发送消息错误: ${error}`);
+    return { ok: false, error: error.message };
+  }
 }
 
 // editMessage 函数，用于更新已发送的消息
