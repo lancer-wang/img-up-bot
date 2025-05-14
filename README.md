@@ -63,30 +63,46 @@
 
 4.  **部署 Cloudflare Worker 方法**:
 
-    **方法一：使用 Wrangler CLI (推荐)**
+    **方法一：通过 Cloudflare Dashboard 导入 GitHub 仓库 (推荐)**
+    
+    * 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+    * 点击 Workers & Pages -> 创建应用程序 -> 连接 Git
+    * 选择 GitHub 并授权 Cloudflare 访问您的 GitHub 帐户
+    * 选择您 fork 的仓库 -> 选择"Pages"部署类型
+    * 在"构建设置"部分:
+      - 构建命令：留空
+      - 构建输出目录：留空
+      - 根目录：留空
+    * 在"环境变量"部分添加必要的变量（见下面的第5步）
+    * 点击"保存并部署"
+    * 部署完成后，记下您的 Worker URL（例如 `https://img-up-bot-xxxx.pages.dev`）
+    
+    **方法二：使用 Wrangler CLI**
     
     * 安装 [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/)：`npm install -g wrangler`
     * 登录 Cloudflare：`wrangler login`
+    * 克隆您 fork 的仓库：`git clone https://github.com/你的用户名/img-up-bot.git`
+    * 进入项目目录：`cd img-up-bot`
     * 修改项目中的 `wrangler.toml` 文件，设置您自己的 Worker 名称
     * 部署 Worker：`wrangler deploy`
     
-    **方法二：通过 Cloudflare Dashboard**
+    **方法三：通过 Cloudflare Dashboard 手动创建**
     
-    *   登录 Cloudflare -> Workers & Pages -> 创建应用程序 -> 创建Worker
-    *   将 `worker.js` 文件的内容复制到编辑器中
-    *   点击"部署"
-    *   记下部署成功后的 Worker URL（例如 `https://your-worker-name.your-subdomain.workers.dev`）
+    * 登录 Cloudflare -> Workers & Pages -> 创建应用程序 -> 创建Worker
+    * 将 `worker.js` 文件的内容复制到编辑器中
+    * 点击"部署"
+    * 记下部署成功后的 Worker URL（例如 `https://your-worker-name.your-subdomain.workers.dev`）
 
 5.  **设置环境变量 (关键步骤)**:
 
     **通过 Cloudflare Dashboard**
     
-    *   登录 Cloudflare -> Workers & Pages -> 您的 Worker -> Settings -> Variables -> Add variable
-    *   添加以下变量(选择Secret类型)：
+    * 登录 Cloudflare -> Workers & Pages -> 您的 Worker -> 设置 -> 变量 -> 添加变量
+    * 添加以下变量(选择Secret类型)：
         * `BOT_TOKEN`: 您的Telegram Bot Token
         * `IMG_BED_URL`: 您的图床上传URL
         * `AUTH_CODE`: 您的图床认证码（如果需要）
-    *   点击"保存并部署"
+    * 点击"保存并部署"
 
 6.  **设置 Telegram Webhook**:
 
