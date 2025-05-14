@@ -1,18 +1,33 @@
 # Telegram 图床上传机器人 (基于 Cloudflare Workers)
 
-这是一个部署在 Cloudflare Workers 上的 Telegram 机器人。它可以接收您发送到 Telegram 的图片和视频文件，并将它们自动上传到您指定的图床或对象存储服务（需要有公开的上传接口），然后将生成的公开链接返回给您。
+这是一个部署在 Cloudflare Workers 上的 Telegram 机器人。它可以接收您发送到 Telegram 的图片、视频、音频、文档等多种文件，并将它们自动上传到您指定的图床或对象存储服务（需要有公开的上传接口），然后将生成的公开链接返回给您。
 
 本项目利用 Cloudflare Workers 的 Serverless 特性，可以实现低成本甚至免费（在 Cloudflare 免费额度内）运行。
 
 ## ✨ 功能特性
 
-*   **自动上传**: 直接向机器人发送图片或视频即可触发上传。
-*   **支持多种文件格式**: 可处理图片、视频、音频、GIF动画及各类文档文件。
-*   **配置灵活**: 通过 Cloudflare 环境变量和 Secrets 配置图床地址、Bot Token 和可选的认证信息，无需修改代码。
+*   **自动上传**: 直接向机器人发送文件即可触发上传。
+*   **多种文件支持**: 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。
+*   **文件大小限制**: 支持最大20Mb的文件上传（受Telegram Bot自身限制）。
+*   **配置灵活**: 通过 Cloudflare 环境变量和 Secrets 配置图床地址、Bot Token 和可选的认证信息。
 *   **部署简单**: 基于 Cloudflare Workers，部署流程相对简单。
 *   **低成本**: 利用 Cloudflare 的免费套餐额度。
 *   **安全**: 敏感信息（如 Bot Token、认证代码）通过 Secrets 管理，更加安全。
 *   **一键设置Webhook**: 内置Webhook配置端点，简化机器人设置过程。
+
+## 📋 支持的文件格式类别
+
+*   **🖼️ 图像**: jpg, png, gif, webp, svg, bmp, tiff, heic, raw...
+*   **🎬 视频**: mp4, avi, mov, mkv, webm, flv, rmvb, m4v...
+*   **🎵 音频**: mp3, wav, ogg, flac, aac, m4a, wma, opus...
+*   **📝 文档**: pdf, doc(x), xls(x), ppt(x), txt, md, epub...
+*   **🗜️ 压缩**: zip, rar, 7z, tar, gz, xz, bz2...
+*   **⚙️ 可执行**: exe, msi, apk, ipa, deb, rpm, dmg...
+*   **🌐 网页/代码**: html, css, js, ts, py, java, php, go...
+*   **🎨 3D/设计**: obj, fbx, blend, stl, psd, ai, sketch...
+*   **📊 数据/科学**: mat, hdf5, parquet, csv, json, xml...
+
+总计支持超过400种文件格式！
 
 ## 🚀 工作原理
 
@@ -88,25 +103,26 @@
         ```
     *   如果显示 `{"ok":true,"result":true,"description":"Webhook was set"}` 或类似信息，则表示设置成功。
 
-## 💬 如何使用
+## 💬 使用说明
 
-1.  在 Telegram 中搜索您创建的机器人的用户名，并开始对话。
-2.  发送 `/start` 命令给机器人（通常只需要第一次）。
-3.  发送 `/help` 命令可以查看简单的使用说明。
-4.  直接发送图片、视频、音频或文档文件给机器人。
-5.  机器人会显示"正在处理"的消息，完成后会更新为上传成功的链接。
+1. 发送 `/start` 启动机器人（仅首次需要）。
+2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。
+3. 支持最大20Mb的文件上传（受Telegram Bot限制）。
+4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。
+5. 使用 `/formats` 命令查看支持的文件格式类别。
 
 ## 设置机器人命令菜单 (可选)
 
-为了让用户在 Telegram 中更方便地使用 `/start` 和 `/help` 命令（例如通过点击输入框旁边的 `/` 按钮），您可以通过 BotFather 设置命令列表。这能提供命令提示，改善用户体验。
+为了让用户在 Telegram 中更方便地使用命令，您可以通过 BotFather 设置命令列表：
 
 1.  在 Telegram 中再次与 [@BotFather](https://t.me/BotFather) 对话。
 2.  发送 `/setcommands` 命令。
 3.  按照提示，选择您刚刚部署配置好的机器人。
-4.  **直接发送以下文本**（确保命令和描述之间有空格和连字符，并且每个命令占一行，可以进行修改）：
+4.  **直接发送以下文本**：
     ```
     start - 启用机器人
     help - 查看帮助信息
+    formats - 查看支持的文件格式类别
     ```
 5.  设置成功后，用户在与您的机器人对话时，点击 `/` 按钮就能看到这些预设的命令选项了。
 
@@ -126,4 +142,16 @@
    * 修改代码后，重新部署Worker：`wrangler deploy`
    * 检查环境变量是否需要更新
 
-修改需要注明原项目地址！
+## 版权说明
+
+本项目为原创项目，开源协议遵循 MIT License。
+
+如需对本项目进行二次修改或分发，请遵循以下要求：
+1. 保留原项目的版权信息
+2. 在文档中标明原项目地址：https://github.com/uki0xc/img-up-bot
+3. 标明修改内容与原作者信息
+
+作者：[@uki0x](https://github.com/uki0xc)  
+邮箱：a@vki.im  
+Telegram：[@uki0x](https://t.me/uki0x)
+
