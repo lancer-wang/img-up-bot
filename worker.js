@@ -679,6 +679,8 @@ async function handleAudio(message, chatId, isDocument = false, env) {
   const fileName = isDocument 
     ? message.document.file_name 
     : (message.audio.title || message.audio.file_name || `audio_${Date.now()}.mp3`);
+  // 获取用户的音频描述作为备注
+  const audioDescription = message.caption || "";
 
   // 从 env 获取配置
   const IMG_BED_URL = env.IMG_BED_URL;
@@ -752,10 +754,16 @@ async function handleAudio(message, chatId, isDocument = false, env) {
       const actualFileSize = extractedResult.fileSize || audioSize;
 
       if (audioUrl) {
-        const msgText = `✅ 音频上传成功！\n\n` +
-                       `📄 文件名: ${actualFileName}\n` +
-                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                       `🔗 URL：${audioUrl}`;
+        let msgText = `✅ 音频上传成功！\n\n` +
+                     `📄 文件名: ${actualFileName}\n`;
+        
+        // 如果有音频描述，添加备注信息
+        if (audioDescription) {
+          msgText += `📝 备注: ${audioDescription}\n`;
+        }
+        
+        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL：${audioUrl}`;
         
         // 更新之前的消息而不是发送新消息
         if (messageId) {
@@ -764,13 +772,14 @@ async function handleAudio(message, chatId, isDocument = false, env) {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据
+        // 更新用户统计数据，添加备注字段
         await updateUserStats(chatId, {
           fileType: 'audio',
           fileSize: actualFileSize,
           success: true,
           fileName: actualFileName,
-          url: audioUrl
+          url: audioUrl,
+          description: audioDescription
         }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取音频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
@@ -823,6 +832,8 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
   const fileName = isDocument 
     ? message.document.file_name 
     : (message.animation.file_name || `animation_${Date.now()}.gif`);
+  // 获取用户的动画描述作为备注
+  const animDescription = message.caption || "";
 
   // 从 env 获取配置
   const IMG_BED_URL = env.IMG_BED_URL;
@@ -896,10 +907,16 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
       const actualFileSize = extractedResult.fileSize || animSize;
 
       if (animUrl) {
-        const msgText = `✅ 动画/GIF上传成功！\n\n` +
-                       `📄 文件名: ${actualFileName}\n` +
-                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                       `🔗 URL：${animUrl}`;
+        let msgText = `✅ 动画/GIF上传成功！\n\n` +
+                     `📄 文件名: ${actualFileName}\n`;
+        
+        // 如果有动画描述，添加备注信息
+        if (animDescription) {
+          msgText += `📝 备注: ${animDescription}\n`;
+        }
+        
+        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL：${animUrl}`;
         
         // 更新之前的消息而不是发送新消息
         if (messageId) {
@@ -908,13 +925,14 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据
+        // 更新用户统计数据，添加备注字段
         await updateUserStats(chatId, {
           fileType: 'animation',
           fileSize: actualFileSize,
           success: true,
           fileName: actualFileName,
-          url: animUrl
+          url: animUrl,
+          description: animDescription
         }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取动画链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
