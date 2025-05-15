@@ -100,7 +100,7 @@ async function handleRequest(request, env) {
       if (command === '/start') {
         try {
           console.log("开始处理/start命令");
-          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等400多种格式。支持最大20Mb的文件上传(Telegram Bot自身限制)。', env);
+          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等400多种格式。发送文件时添加文字描述可作为文件备注，方便后续查找。支持最大20Mb的文件上传(Telegram Bot自身限制)。', env);
           console.log("/start命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/start消息失败:", error);
@@ -108,7 +108,7 @@ async function handleRequest(request, env) {
       } else if (command === '/help') {
         try {
           console.log("开始处理/help命令");
-          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n5. 使用 /formats 命令查看支持的文件格式类别。\n6. 使用 /analytics 命令查看所有统计分析（支持多种参数）。\n7. 使用 /history 命令查看您的上传历史记录。\n8. 此机器人由 @uki0x 开发', env);
+          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 发送图片视频文件时填入文字描述可作为文件备注，方便后续查找。\n4. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n5. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n6. 使用 /formats 命令查看支持的文件格式类别。\n7. 使用 /analytics 命令查看所有统计分析（支持多种参数）。\n8. 使用 /history 命令查看您的上传历史记录。\n9. 此机器人由 @uki0x 开发', env);
           console.log("/help命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/help消息失败:", error);
