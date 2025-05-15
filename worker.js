@@ -387,6 +387,8 @@ async function handleRequest(request, env) {
 async function handlePhoto(message, chatId, env) {
   const photo = message.photo[message.photo.length - 1];
   const fileId = photo.file_id;
+  // 获取用户的图片描述作为备注
+  const photoDescription = message.caption || "";
 
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
@@ -463,10 +465,16 @@ async function handlePhoto(message, chatId, env) {
       const actualFileSize = extractedResult.fileSize || fileSize;
 
       if (imgUrl) {
-        const msgText = `✅ 图片上传成功！\n\n` +
-                       `📄 文件名: ${actualFileName}\n` +
-                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                       `🔗 URL：${imgUrl}`;
+        let msgText = `✅ 图片上传成功！\n\n` +
+                     `📄 文件名: ${actualFileName}\n`;
+        
+        // 如果有图片描述，添加备注信息
+        if (photoDescription) {
+          msgText += `📝 备注: ${photoDescription}\n`;
+        }
+        
+        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL：${imgUrl}`;
         
         // 更新之前的消息而不是发送新消息
         if (messageId) {
@@ -475,13 +483,14 @@ async function handlePhoto(message, chatId, env) {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据
+        // 更新用户统计数据，添加备注字段
         await updateUserStats(chatId, {
           fileType: 'image',
           fileSize: actualFileSize,
           success: true,
           fileName: actualFileName,
-          url: imgUrl
+          url: imgUrl,
+          description: photoDescription
         }, env);
       } else {
         const errorMsg = `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`;
@@ -521,6 +530,8 @@ async function handlePhoto(message, chatId, env) {
 async function handleVideo(message, chatId, isDocument = false, env) {
   const fileId = isDocument ? message.document.file_id : message.video.file_id;
   const fileName = isDocument ? message.document.file_name : `video_${Date.now()}.mp4`;
+  // 获取用户的视频描述作为备注
+  const videoDescription = message.caption || "";
 
   // 从 env 获取配置
   const IMG_BED_URL = env.IMG_BED_URL;
@@ -585,36 +596,40 @@ async function handleVideo(message, chatId, isDocument = false, env) {
         uploadResult = responseText;
       }
 
-      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
+      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
       const videoUrl = extractedResult.url;
-      // 使用提取的文件名或默认值
       const actualFileName = extractedResult.fileName || fileName;
-      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
       const actualFileSize = extractedResult.fileSize || videoSize;
 
       if (videoUrl) {
-        const msgText = `✅ 视频上传成功！\n\n` +
-                       `📄 文件名: ${actualFileName}\n` +
-                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                       `🔗 URL：${videoUrl}`;
+        let msgText = `✅ 视频上传成功！\n\n` + 
+                     `📄 文件名: ${actualFileName}\n`;
         
-        // 更新之前的消息而不是发送新消息
+        // 如果有视频描述，添加备注信息
+        if (videoDescription) {
+          msgText += `📝 备注: ${videoDescription}\n`;
+        }
+        
+        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL：${videoUrl}`;
+
         if (messageId) {
           await editMessage(chatId, messageId, msgText, env);
         } else {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据
+        // 更新用户统计数据，添加备注字段
         await updateUserStats(chatId, {
           fileType: 'video',
           fileSize: actualFileSize,
           success: true,
           fileName: actualFileName,
-          url: videoUrl
+          url: videoUrl,
+          description: videoDescription
         }, env);
       } else {
-        const errorMsg = `⚠️ 无法从图床获取视频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        const errorMsg = `⚠️ 无法从图床获取视频链接。请稍后再试。`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
@@ -630,12 +645,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       }
     } catch (error) {
       console.error('处理视频时出错:', error);
-      let errorDetails = '';
-      if (error.message) {
-        errorDetails = `\n错误详情: ${error.message}`;
-      }
-      
-      const errorMsg = `❌ 处理视频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送视频\n2. 如果视频较大，可以尝试压缩后再发送\n3. 尝试将视频转换为MP4格式`;
+      const errorMsg = `❌ 处理视频时出错: ${error.message}`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -643,13 +653,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       }
     }
   } else {
-    let errorDetails = '';
-    if (fileInfo.error) {
-      errorDetails = `\n错误详情: ${fileInfo.error}`;
-      console.error(`获取视频文件信息失败: ${fileInfo.error}`);
-    }
-    
-    const errorMsg = `❌ 无法获取视频信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送视频\n2. 如果视频较大，可以尝试压缩后再发送\n3. 尝试将视频转换为MP4格式`;
+    const errorMsg = '❌ 无法获取视频信息，请稍后再试。';
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -951,6 +955,8 @@ async function handleDocument(message, chatId, env) {
   const fileId = message.document.file_id;
   const fileName = message.document.file_name || `file_${Date.now()}`;
   const mimeType = message.document.mime_type || 'application/octet-stream';
+  // 获取用户的文件描述作为备注
+  const fileDescription = message.caption || "";
 
   // 检查文件扩展名是否支持
   const fileExt = fileName.split('.').pop().toLowerCase();
@@ -1054,10 +1060,16 @@ async function handleDocument(message, chatId, env) {
       const actualFileSize = extractedResult.fileSize || fileSize;
 
       if (fileUrl2) {
-        const msgText = `✅ 文件上传成功！\n\n` +
-                       `📄 文件名: ${actualFileName}\n` +
-                       `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                       `🔗 URL：${fileUrl2}`;
+        let msgText = `✅ 文件上传成功！\n\n` +
+                       `📄 文件名: ${actualFileName}\n`;
+        
+        // 如果有文件描述，添加备注信息
+        if (fileDescription) {
+          msgText += `📝 备注: ${fileDescription}\n`;
+        }
+        
+        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
+                   `🔗 URL：${fileUrl2}`;
         
         // 更新之前的消息而不是发送新消息
         if (messageId) {
@@ -1066,13 +1078,14 @@ async function handleDocument(message, chatId, env) {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据
+        // 更新用户统计数据，添加备注信息
         await updateUserStats(chatId, {
           fileType: 'document',
           fileSize: actualFileSize,
           success: true,
           fileName: actualFileName,
-          url: fileUrl2
+          url: fileUrl2,
+          description: fileDescription // 添加备注字段
         }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取文件链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
@@ -1851,11 +1864,12 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
       }
     }
     
-    // 搜索功能：根据关键词过滤
+    // 搜索功能：根据关键词过滤（包括文件名和备注）
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filteredHistory = filteredHistory.filter(entry => 
-        entry.fileName && entry.fileName.toLowerCase().includes(query)
+        (entry.fileName && entry.fileName.toLowerCase().includes(query)) ||
+        (entry.description && entry.description.toLowerCase().includes(query))
       );
       
       if (filteredHistory.length === 0) {
@@ -1888,6 +1902,12 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
       const fileIcon = getFileTypeIcon(record.fileType);
       
       message += `${i + 1 + startIndex}. ${fileIcon} *${record.fileName}*\n`;
+      
+      // 如果有备注，显示备注信息
+      if (record.description) {
+        message += `   📝 备注: ${record.description}\n`;
+      }
+      
       message += `   📅 上传时间: ${formattedDate}\n`;
       message += `   📦 文件大小: ${formatFileSize(record.fileSize)}\n`;
       message += `   🔗 URL: ${record.url}\n`;
@@ -1911,7 +1931,7 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
     }
     
     // 添加搜索说明
-    message += `\n\n🔍 要搜索文件名，请使用:\n/history search:关键词`;
+    message += `\n\n🔍 要搜索文件名或备注，请使用:\n/history search:关键词`;
     
     // 添加删除说明
     message += `\n\n🗑️ 要删除某条记录，请使用:\n/history delete_记录ID`;
@@ -1957,10 +1977,16 @@ async function handleDeleteHistoryRecord(chatId, recordId, env) {
     await env.STATS_STORAGE.put(statsKey, JSON.stringify(userStats));
     
     // 发送确认消息
-    const confirmMessage = `✅ 已成功删除以下记录:\n\n` +
-                          `📄 文件名: ${record.fileName}\n` +
-                          `📅 上传时间: ${formatDate(record.timestamp)}\n` +
-                          `🔗 URL: ${record.url}`;
+    let confirmMessage = `✅ 已成功删除以下记录:\n\n` +
+                         `📄 文件名: ${record.fileName}\n`;
+    
+    // 如果有备注，添加备注信息
+    if (record.description) {
+      confirmMessage += `📝 备注: ${record.description}\n`;
+    }
+    
+    confirmMessage += `📅 上传时间: ${formatDate(record.timestamp)}\n` +
+                     `🔗 URL: ${record.url}`;
     
     await sendMessage(chatId, confirmMessage, env);
   } catch (error) {
