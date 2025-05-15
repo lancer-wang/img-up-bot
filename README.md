@@ -14,6 +14,7 @@
 *   **低成本**: 利用 Cloudflare 的免费套餐额度。
 *   **安全**: 敏感信息（如 Bot Token、认证代码）通过 Secrets 管理，更加安全。
 *   **一键设置Webhook**: 内置Webhook配置端点，简化机器人设置过程。
+*   **上传历史管理**: 支持查看、搜索和删除历史上传记录，并提供文件类型筛选和分页浏览功能。
 *   **统计分析功能**:
     * 用户上传文件数量和总大小统计
     * 每日/每周/每月使用报告
@@ -79,14 +80,21 @@
 
 ## 🔧 环境要求
 
+<details>
+<summary>点击展开/折叠环境要求详情</summary>
+
 *   **一个 Telegram Bot**: 需要通过 [BotFather](https://t.me/BotFather) 创建，并获取其 **Bot Token**。
 *   **一个图床/对象存储服务**:
     *   需要提供一个公开的 **文件上传接口 URL** (`IMG_BED_URL`)。
     *   如果该接口需要认证，需要获取相应的 **认证代码** (`AUTH_CODE`)。支持URL参数和Bearer Token认证方式。
 *   **一个 Cloudflare 账户**: 免费账户即可开始。
 *   **Cloudflare KV 存储**: 用于存储用户统计数据（如需使用统计功能）。
+</details>
 
 ## 🛠️ 部署与配置步骤
+
+<details>
+<summary>点击展开/折叠部署与配置详情</summary>
 
 1.  **创建 Telegram Bot**:
     *   在 Telegram 中与 [@BotFather](https://t.me/BotFather) 对话。
@@ -173,8 +181,12 @@
         https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=<YOUR_WORKER_URL>
         ```
     *   如果显示 `{"ok":true,"result":true,"description":"Webhook was set"}` 或类似信息，则表示设置成功。
+</details>
 
 ## 💬 使用说明
+
+<details>
+<summary>点击展开/折叠使用说明详情</summary>
 
 1. 发送 `/start` 启动机器人（仅首次需要）。
 2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。
@@ -182,8 +194,13 @@
 4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。
 5. 使用 `/formats` 命令查看支持的文件格式类别。
 6. 使用 `/analytics` 命令查看所有统计分析功能（支持多种参数）。
+7. 使用 `/history` 命令管理您的上传历史记录。
+</details>
 
 ## 📊 统计分析功能
+
+<details>
+<summary>点击展开/折叠统计分析功能详情</summary>
 
 本机器人内置了完整的统计分析功能，可帮助用户了解他们的文件上传历史和存储使用情况：
 
@@ -230,8 +247,47 @@
 * 每次文件上传完成后自动更新统计数据
 * 跟踪文件类型、大小、上传成功/失败状态
 * 按日期记录使用数据，保留最近60天的记录
+</details>
+
+## 📋 上传历史管理
+
+<details>
+<summary>点击展开/折叠上传历史管理详情</summary>
+
+本机器人内置上传历史管理功能，能够帮助用户快速查找、管理之前上传的所有文件：
+
+### 基本功能
+
+* `/history` - 查看所有上传历史记录
+* `/history page2` - 查看第2页历史记录（每页显示5条记录）
+* `/history image` - 只查看图片类型的历史记录
+* `/history video` - 只查看视频类型的历史记录
+* `/history search:关键词` - 按文件名搜索历史记录
+* `/history delete_记录ID` - 删除指定ID的历史记录
+
+### 历史记录信息
+
+每条历史记录会显示以下信息：
+* 文件名
+* 文件类型（带图标标识）
+* 上传时间（精确到分钟）
+* 文件大小
+* 文件URL链接
+* 记录ID（用于删除操作）
+
+### 技术实现
+
+* 历史记录存储在 Cloudflare KV 中，按用户ID分开保存
+* 每次成功上传文件后自动添加到历史记录
+* 最多保存最近100条记录，超过后自动清理最早的记录
+* 支持按文件类型和文件名关键词筛选
+* 分页显示，避免消息过长
+</details>
 
 ## 设置机器人命令菜单 (可选)
+
+<details>
+<summary>点击展开/折叠命令菜单设置详情</summary>
 
 为了让用户在 Telegram 中更方便地使用命令，您可以通过 BotFather 设置命令列表：
 
@@ -244,10 +300,15 @@
     help - 查看帮助信息
     formats - 查看支持的文件格式类别
     analytics - 查看统计分析 [storage/report/daily/weekly/monthly/success]
+    history - 查看和管理上传历史记录
     ```
 5.  设置成功后，用户在与您的机器人对话时，点击 `/` 按钮就能看到这些预设的命令选项了。
+</details>
 
 ## 常见问题排查
+
+<details>
+<summary>点击展开/折叠常见问题详情</summary>
 
 1. **机器人不响应命令**
    * 确认环境变量是否正确设置
@@ -262,6 +323,7 @@
 3. **需要更新机器人**
    * 修改代码后，重新部署Worker：`wrangler deploy`
    * 检查环境变量是否需要更新
+</details>
 
 ## 版权说明
 

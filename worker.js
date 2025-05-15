@@ -108,7 +108,7 @@ async function handleRequest(request, env) {
       } else if (command === '/help') {
         try {
           console.log("开始处理/help命令");
-          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n5. 使用 /formats 命令查看支持的文件格式类别。\n6. 使用 /analytics 命令查看所有统计分析（支持多种参数）：\n   - /analytics - 显示综合统计和命令帮助\n   - /analytics storage - 存储使用情况\n   - /analytics report - 月度报告\n   - /analytics daily/weekly/monthly - 日/周/月报告\n   - /analytics success - 上传成功率\n7. 此机器人由 @uki0x 开发', env);
+          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n5. 使用 /formats 命令查看支持的文件格式类别。\n6. 使用 /analytics 命令查看所有统计分析（支持多种参数）。\n7. 使用 /history 命令查看您的上传历史记录。\n8. 此机器人由 @uki0x 开发', env);
           console.log("/help命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/help消息失败:", error);
@@ -221,6 +221,47 @@ async function handleRequest(request, env) {
         } catch (error) {
           console.error("发送/analytics消息失败:", error);
           await sendMessage(chatId, `❌ 获取统计信息失败: ${error.message}`, env);
+        }
+      } else if (command === '/history' || command === '/history@' + env.BOT_USERNAME) {
+        try {
+          console.log("开始处理/history命令");
+          // 解析参数
+          const args = text.split(' ');
+          let page = 1;
+          let fileType = null;
+          let searchQuery = null;
+          
+          // 寻找搜索关键词
+          if (text.includes('search:') || text.includes('搜索:')) {
+            const searchMatch = text.match(/(search:|搜索:)\s*([^\s]+)/i);
+            if (searchMatch && searchMatch[2]) {
+              searchQuery = searchMatch[2].trim();
+            }
+          }
+          
+          // 解析页码参数
+          for (let i = 1; i < args.length; i++) {
+            const arg = args[i].toLowerCase();
+            
+            // 如果已经找到搜索关键词，跳过后续处理
+            if (searchQuery) continue;
+            
+            if (arg.startsWith('p') || arg.startsWith('page')) {
+              const pageNum = parseInt(arg.replace(/^p(age)?/, ''));
+              if (!isNaN(pageNum) && pageNum > 0) {
+                page = pageNum;
+              }
+            } else if (['image', 'video', 'audio', 'document', 'animation'].includes(arg)) {
+              fileType = arg;
+            } else if (arg.startsWith('search:') || arg.startsWith('搜索:')) {
+              searchQuery = arg.split(':')[1];
+            }
+          }
+          
+          await handleHistoryCommand(chatId, page, fileType, searchQuery, env);
+        } catch (error) {
+          console.error("发送/history消息失败:", error);
+          await sendMessage(chatId, `❌ 获取历史记录失败: ${error.message}`, env);
         }
       } else {
         console.log("未知命令:", command);
@@ -438,7 +479,9 @@ async function handlePhoto(message, chatId, env) {
         await updateUserStats(chatId, {
           fileType: 'image',
           fileSize: actualFileSize,
-          success: true
+          success: true,
+          fileName: actualFileName,
+          url: imgUrl
         }, env);
       } else {
         const errorMsg = `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`;
@@ -566,7 +609,9 @@ async function handleVideo(message, chatId, isDocument = false, env) {
         await updateUserStats(chatId, {
           fileType: 'video',
           fileSize: actualFileSize,
-          success: true
+          success: true,
+          fileName: actualFileName,
+          url: videoUrl
         }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取视频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
@@ -708,7 +753,9 @@ async function handleAudio(message, chatId, isDocument = false, env) {
         await updateUserStats(chatId, {
           fileType: 'audio',
           fileSize: actualFileSize,
-          success: true
+          success: true,
+          fileName: actualFileName,
+          url: audioUrl
         }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取音频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
@@ -850,7 +897,9 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
         await updateUserStats(chatId, {
           fileType: 'animation',
           fileSize: actualFileSize,
-          success: true
+          success: true,
+          fileName: actualFileName,
+          url: animUrl
         }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取动画链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
@@ -1021,7 +1070,9 @@ async function handleDocument(message, chatId, env) {
         await updateUserStats(chatId, {
           fileType: 'document',
           fileSize: actualFileSize,
-          success: true
+          success: true,
+          fileName: actualFileName,
+          url: fileUrl2
         }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取文件链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
@@ -1489,6 +1540,30 @@ async function updateUserStats(chatId, data, env) {
     // 更新成功/失败计数
     if (data.success) {
       userStats.successfulUploads += 1;
+      
+      // 如果上传成功，添加到历史记录
+      if (!userStats.uploadHistory) {
+        userStats.uploadHistory = [];
+      }
+      
+      // 创建历史记录条目
+      const historyEntry = {
+        id: Date.now().toString(), // 使用时间戳作为唯一ID
+        timestamp: new Date().toISOString(),
+        fileName: data.fileName || `file_${Date.now()}`,
+        fileType: fileType,
+        fileSize: data.fileSize || 0,
+        url: data.url || '',
+        thumbnailUrl: data.thumbnailUrl || ''
+      };
+      
+      // 添加到历史记录，保持最新的记录在前面
+      userStats.uploadHistory.unshift(historyEntry);
+      
+      // 限制历史记录大小，最多保存100条
+      if (userStats.uploadHistory.length > 100) {
+        userStats.uploadHistory = userStats.uploadHistory.slice(0, 100);
+      }
     } else {
       userStats.failedUploads += 1;
     }
@@ -1562,7 +1637,8 @@ function createEmptyStats() {
     totalSize: 0,
     fileTypes: {},
     dailyData: {},
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    uploadHistory: [] // 添加上传历史数组
   };
 }
 
@@ -1738,4 +1814,179 @@ function formatSuccessRateMessage(stats) {
   message += `使用 /report 命令查看详细的使用报告\n`;
   
   return message;
+}
+
+// 处理历史命令
+async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
+  try {
+    // 每页显示的记录数
+    const ITEMS_PER_PAGE = 5;
+    
+    // 获取用户统计数据
+    const userStats = await getUserStats(chatId, env);
+    
+    // 检查是否有上传历史
+    if (!userStats.uploadHistory || userStats.uploadHistory.length === 0) {
+      await sendMessage(chatId, "📂 您还没有上传过任何文件。", env);
+      return;
+    }
+    
+    // 检查是否是删除请求
+    const args = fileType ? fileType.split('_') : [];
+    if (args.length > 0 && args[0] === 'delete' && args[1]) {
+      // 处理删除请求
+      const recordId = args[1];
+      await handleDeleteHistoryRecord(chatId, recordId, env);
+      return;
+    }
+    
+    // 根据文件类型过滤历史记录
+    let filteredHistory = userStats.uploadHistory;
+    if (fileType && !fileType.startsWith('delete_')) {
+      filteredHistory = filteredHistory.filter(entry => entry.fileType === fileType);
+      
+      if (filteredHistory.length === 0) {
+        await sendMessage(chatId, `📂 没有找到类型为 ${fileType} 的上传记录。`, env);
+        return;
+      }
+    }
+    
+    // 搜索功能：根据关键词过滤
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filteredHistory = filteredHistory.filter(entry => 
+        entry.fileName && entry.fileName.toLowerCase().includes(query)
+      );
+      
+      if (filteredHistory.length === 0) {
+        await sendMessage(chatId, `📂 没有找到包含关键词 "${searchQuery}" 的上传记录。`, env);
+        return;
+      }
+    }
+    
+    // 计算总页数
+    const totalPages = Math.ceil(filteredHistory.length / ITEMS_PER_PAGE);
+    
+    // 验证页码范围
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    
+    // 计算当前页的记录
+    const startIndex = (page - 1) * ITEMS_PER_PAGE;
+    const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredHistory.length);
+    const pageRecords = filteredHistory.slice(startIndex, endIndex);
+    
+    // 生成历史记录消息
+    let message = `📋 *上传历史记录* ${fileType ? `(${fileType})` : ''} ${searchQuery ? `🔍搜索: "${searchQuery}"` : ''}\n\n`;
+    
+    for (let i = 0; i < pageRecords.length; i++) {
+      const record = pageRecords[i];
+      const date = new Date(record.timestamp);
+      const formattedDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      
+      // 获取文件类型图标
+      const fileIcon = getFileTypeIcon(record.fileType);
+      
+      message += `${i + 1 + startIndex}. ${fileIcon} *${record.fileName}*\n`;
+      message += `   📅 上传时间: ${formattedDate}\n`;
+      message += `   📦 文件大小: ${formatFileSize(record.fileSize)}\n`;
+      message += `   🔗 URL: ${record.url}\n`;
+      message += `   🆔 记录ID: ${record.id}\n\n`;
+    }
+    
+    // 添加分页导航信息
+    message += `📄 页码: ${page}/${totalPages}`;
+    
+    // 添加导航说明
+    message += `\n\n使用命令 /history page${page+1} 查看下一页`;
+    if (page > 1) {
+      message += `\n使用命令 /history page${page-1} 查看上一页`;
+    }
+    
+    // 添加筛选说明
+    if (!fileType && !searchQuery) {
+      message += `\n\n可按文件类型筛选:\n/history image - 仅查看图片\n/history video - 仅查看视频\n/history document - 仅查看文档`;
+    } else if (!searchQuery) {
+      message += `\n\n使用 /history 查看所有类型的文件`;
+    }
+    
+    // 添加搜索说明
+    message += `\n\n🔍 要搜索文件名，请使用:\n/history search:关键词`;
+    
+    // 添加删除说明
+    message += `\n\n🗑️ 要删除某条记录，请使用:\n/history delete_记录ID`;
+    
+    await sendMessage(chatId, message, env);
+  } catch (error) {
+    console.error("处理历史命令出错:", error);
+    await sendMessage(chatId, `❌ 获取历史记录失败: ${error.message}`, env);
+  }
+}
+
+// 处理删除历史记录请求
+async function handleDeleteHistoryRecord(chatId, recordId, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      await sendMessage(chatId, "❌ KV存储未配置，无法删除记录", env);
+      return;
+    }
+    
+    const statsKey = `user_stats_${chatId}`;
+    const userStats = await getUserStats(chatId, env);
+    
+    if (!userStats.uploadHistory || userStats.uploadHistory.length === 0) {
+      await sendMessage(chatId, "📂 您还没有上传过任何文件。", env);
+      return;
+    }
+    
+    // 查找记录索引
+    const recordIndex = userStats.uploadHistory.findIndex(record => record.id === recordId);
+    
+    if (recordIndex === -1) {
+      await sendMessage(chatId, "❌ 未找到指定的记录，可能已被删除。", env);
+      return;
+    }
+    
+    // 获取记录详情用于确认消息
+    const record = userStats.uploadHistory[recordIndex];
+    
+    // 删除记录
+    userStats.uploadHistory.splice(recordIndex, 1);
+    
+    // 保存更新后的统计数据
+    await env.STATS_STORAGE.put(statsKey, JSON.stringify(userStats));
+    
+    // 发送确认消息
+    const confirmMessage = `✅ 已成功删除以下记录:\n\n` +
+                          `📄 文件名: ${record.fileName}\n` +
+                          `📅 上传时间: ${formatDate(record.timestamp)}\n` +
+                          `🔗 URL: ${record.url}`;
+    
+    await sendMessage(chatId, confirmMessage, env);
+  } catch (error) {
+    console.error("删除历史记录出错:", error);
+    await sendMessage(chatId, `❌ 删除记录失败: ${error.message}`, env);
+  }
+}
+
+// 格式化日期
+function formatDate(dateString) {
+  try {
+    const date = new Date(dateString);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  } catch (e) {
+    return dateString;
+  }
+}
+
+// 获取文件类型图标
+function getFileTypeIcon(fileType) {
+  switch (fileType) {
+    case 'image': return '🖼️';
+    case 'video': return '🎬';
+    case 'audio': return '🎵';
+    case 'animation': return '🎞️';
+    case 'document': return '📄';
+    default: return '📁';
+  }
 }
