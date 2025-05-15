@@ -1596,7 +1596,8 @@ async function updateUserStats(chatId, data, env) {
         fileType: fileType,
         fileSize: data.fileSize || 0,
         url: data.url || '',
-        thumbnailUrl: data.thumbnailUrl || ''
+        thumbnailUrl: data.thumbnailUrl || '',
+        description: data.description || '' // 添加备注字段
       };
       
       // 添加到历史记录，保持最新的记录在前面
