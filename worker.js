@@ -1033,6 +1033,13 @@ async function handleDocument(message, chatId, env) {
         } else {
           await sendMessage(chatId, msgText, env);
         }
+        
+        // 更新用户统计数据
+        await updateUserStats(chatId, {
+          fileType: 'document',
+          fileSize: actualFileSize,
+          success: true
+        }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取文件链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
         if (messageId) {
@@ -1040,6 +1047,13 @@ async function handleDocument(message, chatId, env) {
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
+        
+        // 更新失败统计
+        await updateUserStats(chatId, {
+          fileType: 'document',
+          fileSize: fileSize,
+          success: false
+        }, env);
       }
     } catch (error) {
       console.error('处理文件时出错:', error);
