@@ -14,6 +14,11 @@
 *   **低成本**: 利用 Cloudflare 的免费套餐额度。
 *   **安全**: 敏感信息（如 Bot Token、认证代码）通过 Secrets 管理，更加安全。
 *   **一键设置Webhook**: 内置Webhook配置端点，简化机器人设置过程。
+*   **统计分析功能**:
+    * 用户上传文件数量和总大小统计
+    * 每日/每周/每月使用报告
+    * 图床存储使用情况监控
+    * 上传成功率分析
 
 ## 📅 预期功能（开发中）
 
@@ -35,12 +40,6 @@
     * 视频转换为GIF或其他常用格式
     * 批量图片格式转换
     * 文件重命名与元数据编辑
-    
-*   **统计分析功能**:
-    * 用户上传文件数量和总大小统计
-    * 每日/每周/每月使用报告
-    * 图床存储使用情况监控
-    * 上传成功率分析
     
 *   **自定义文件命名**:
     * 支持多种文件命名模板（时间戳、随机字符串、原文件名等）
@@ -76,6 +75,7 @@
 5.  Worker 将下载的文件上传到在环境变量 `IMG_BED_URL` 中配置的图床地址，（如果配置了 `AUTH_CODE`）会携带相应的认证参数。
 6.  Worker 解析图床返回的响应，提取公开的文件链接。
 7.  Worker 使用 Telegram Bot API 将获取到的文件链接发送回给用户。
+8.  Worker 将上传统计数据存储到 KV 存储中，用于生成统计报告。
 
 ## 🔧 环境要求
 
@@ -84,6 +84,7 @@
     *   需要提供一个公开的 **文件上传接口 URL** (`IMG_BED_URL`)。
     *   如果该接口需要认证，需要获取相应的 **认证代码** (`AUTH_CODE`)。支持URL参数和Bearer Token认证方式。
 *   **一个 Cloudflare 账户**: 免费账户即可开始。
+*   **Cloudflare KV 存储**: 用于存储用户统计数据（如需使用统计功能）。
 
 ## 🛠️ 部署与配置步骤
 
@@ -96,10 +97,16 @@
     *   确定您的图床或对象存储服务的**上传接口 URL**。注意：图床上传端点通常为 `/upload`，如 `https://your.domain/upload`。这将是 `IMG_BED_URL` 的值。
     *   如果上传需要认证码，**获取该认证码**。这将是 `AUTH_CODE` 的值。如果不需要认证，则此项为空。
 
-3.  **Fork本项目**:
+3.  **创建 KV 命名空间（用于统计功能）**:
+    *   登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+    *   点击 "Workers & Pages" -> "KV" -> "创建命名空间"
+    *   输入名称，例如 "STATS_STORAGE"
+    *   创建后，**记下命名空间 ID**，稍后需要将其添加到配置中
+
+4.  **Fork本项目**:
     *   Fork本仓库。
 
-4.  **部署 Cloudflare Worker 方法**:
+5.  **部署 Cloudflare Worker 方法**:
 
     **方法一：通过 Cloudflare Dashboard 导入 GitHub 仓库 (推荐)**
     
@@ -111,7 +118,7 @@
       - 构建命令：留空
       - 构建输出目录：留空
       - 根目录：留空
-    * 在"环境变量"部分添加必要的变量（见下面的第5步）
+    * 在"环境变量"部分添加必要的变量（见下面的第6步）
     * 点击"保存并部署"
     * 部署完成后，记下您的 Worker URL（例如 `https://img-up-bot-xxxx.pages.dev`）
     
@@ -121,7 +128,14 @@
     * 登录 Cloudflare：`wrangler login`
     * 克隆您 fork 的仓库：`git clone https://github.com/你的用户名/img-up-bot.git`
     * 进入项目目录：`cd img-up-bot`
-    * 修改项目中的 `wrangler.toml` 文件，设置您自己的 Worker 名称
+    * 修改项目中的 `wrangler.toml` 文件：
+      - 设置您自己的 Worker 名称
+      - 更新 KV 命名空间配置，将之前创建的命名空间 ID 填入：
+      ```toml
+      [[kv_namespaces]]
+      binding = "STATS_STORAGE"
+      id = "您的KV命名空间ID"
+      ```
     * 部署 Worker：`wrangler deploy`
     
     **方法三：通过 Cloudflare Dashboard 手动创建**
@@ -131,7 +145,7 @@
     * 点击"部署"
     * 记下部署成功后的 Worker URL（例如 `https://your-worker-name.your-subdomain.workers.dev`）
 
-5.  **设置环境变量 (关键步骤)**:
+6.  **设置环境变量 (关键步骤)**:
 
     **通过 Cloudflare Dashboard**
     
@@ -140,9 +154,12 @@
         * `BOT_TOKEN`: 您的Telegram Bot Token
         * `IMG_BED_URL`: 您的图床上传URL
         * `AUTH_CODE`: 您的图床认证码（如果需要）
+    * 添加 KV 命名空间绑定:
+        * 变量名：`STATS_STORAGE`
+        * KV 命名空间：选择之前创建的命名空间
     * 点击"保存并部署"
 
-6.  **设置 Telegram Webhook**:
+7.  **设置 Telegram Webhook**:
 
     **方法一：使用内置的Webhook设置功能 (推荐)**
     
@@ -164,6 +181,55 @@
 3. 支持最大20Mb的文件上传（受Telegram Bot限制）。
 4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。
 5. 使用 `/formats` 命令查看支持的文件格式类别。
+6. 使用 `/analytics` 命令查看所有统计分析功能（支持多种参数）。
+
+## 📊 统计分析功能
+
+本机器人内置了完整的统计分析功能，可帮助用户了解他们的文件上传历史和存储使用情况：
+
+### 统一的分析命令
+
+使用统一的 `/analytics` 命令可以查看所有类型的统计信息：
+
+* `/analytics` - 显示综合统计信息和命令帮助
+* `/analytics storage` - 显示存储使用情况
+* `/analytics report` - 显示月度使用报告  
+* `/analytics daily` - 显示日报告
+* `/analytics weekly` - 显示周报告
+* `/analytics monthly` - 显示月报告
+* `/analytics success` - 显示上传成功率分析
+
+### 统计功能详情
+
+1. **综合统计信息**
+   * 总上传文件数量
+   * 总存储空间使用量
+   * 成功/失败上传数量
+   * 上传成功率
+   * 按文件类型的分布统计
+
+2. **存储使用情况**
+   * 总存储空间
+   * 平均文件大小
+   * 存储使用趋势
+
+3. **使用报告（日/周/月）**
+   * 显示指定时间段内的上传数量和大小
+   * 日报告：当天数据
+   * 周报告：过去7天数据
+   * 月报告：过去30天数据
+
+4. **上传成功率分析**
+   * 总体成功率
+   * 按文件类型分类的上传数量
+   * 使用频率趋势
+
+### 技术实现
+
+* 统计数据存储在 Cloudflare KV 中，按用户ID分开保存
+* 每次文件上传完成后自动更新统计数据
+* 跟踪文件类型、大小、上传成功/失败状态
+* 按日期记录使用数据，保留最近60天的记录
 
 ## 设置机器人命令菜单 (可选)
 
@@ -177,6 +243,7 @@
     start - 启用机器人
     help - 查看帮助信息
     formats - 查看支持的文件格式类别
+    analytics - 查看统计分析 [storage/report/daily/weekly/monthly/success]
     ```
 5.  设置成功后，用户在与您的机器人对话时，点击 `/` 按钮就能看到这些预设的命令选项了。
 

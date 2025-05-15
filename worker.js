@@ -108,7 +108,7 @@ async function handleRequest(request, env) {
       } else if (command === '/help') {
         try {
           console.log("开始处理/help命令");
-          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n5. 使用 /formats 命令查看支持的文件格式类别。\n6. 无需输入其他命令，无需切换模式。\n7. 此机器人由 @uki0x 开发', env);
+          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n4. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n5. 使用 /formats 命令查看支持的文件格式类别。\n6. 使用 /analytics 命令查看所有统计分析（支持多种参数）：\n   - /analytics - 显示综合统计和命令帮助\n   - /analytics storage - 存储使用情况\n   - /analytics report - 月度报告\n   - /analytics daily/weekly/monthly - 日/周/月报告\n   - /analytics success - 上传成功率\n7. 此机器人由 @uki0x 开发', env);
           console.log("/help命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/help消息失败:", error);
@@ -131,6 +131,113 @@ async function handleRequest(request, env) {
           console.log("/formats命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/formats消息失败:", error);
+        }
+      } else if (command === '/stats') {
+        try {
+          console.log("开始处理/stats命令");
+          const stats = await getUserStats(chatId, env);
+          const statsMessage = formatStatsMessage(stats);
+          const result = await sendMessage(chatId, statsMessage, env);
+          console.log("/stats命令响应:", JSON.stringify(result).substring(0, 200));
+        } catch (error) {
+          console.error("发送/stats消息失败:", error);
+        }
+      } else if (command === '/storage') {
+        try {
+          console.log("开始处理/storage命令");
+          const stats = await getUserStats(chatId, env);
+          const storageMessage = formatStorageMessage(stats);
+          const result = await sendMessage(chatId, storageMessage, env);
+          console.log("/storage命令响应:", JSON.stringify(result).substring(0, 200));
+        } catch (error) {
+          console.error("发送/storage消息失败:", error);
+        }
+      } else if (command === '/report') {
+        try {
+          console.log("开始处理/report命令");
+          const periodArg = text.split(' ')[1]?.toLowerCase();
+          let period = 'monthly'; // 默认为月报告
+          
+          if (periodArg === 'daily' || periodArg === 'day') {
+            period = 'daily';
+          } else if (periodArg === 'weekly' || periodArg === 'week') {
+            period = 'weekly';
+          }
+          
+          const report = await getUserReport(chatId, period, env);
+          const reportMessage = formatReportMessage(report, period);
+          const result = await sendMessage(chatId, reportMessage, env);
+          console.log(`/${period} report命令响应:`, JSON.stringify(result).substring(0, 200));
+        } catch (error) {
+          console.error("发送/report消息失败:", error);
+        }
+      } else if (command === '/success_rate') {
+        try {
+          console.log("开始处理/success_rate命令");
+          const stats = await getUserStats(chatId, env);
+          const successRateMessage = formatSuccessRateMessage(stats);
+          const result = await sendMessage(chatId, successRateMessage, env);
+          console.log("/success_rate命令响应:", JSON.stringify(result).substring(0, 200));
+        } catch (error) {
+          console.error("发送/success_rate消息失败:", error);
+        }
+      } else if (command === '/analytics' || command === '/analytics@' + env.BOT_USERNAME) {
+        try {
+          console.log("开始处理/analytics命令");
+          const args = text.split(' ')[1]?.toLowerCase();
+          
+          // 根据参数决定显示哪种统计信息
+          if (args === 'storage') {
+            // 显示存储统计
+            const stats = await getUserStats(chatId, env);
+            const storageMessage = formatStorageMessage(stats);
+            await sendMessage(chatId, storageMessage, env);
+          } else if (args === 'report' || args === 'daily' || args === 'weekly' || args === 'monthly') {
+            // 显示使用报告
+            let period = 'monthly'; // 默认为月报告
+            
+            if (args === 'daily') {
+              period = 'daily';
+            } else if (args === 'weekly') {
+              period = 'weekly';
+            }
+            
+            const report = await getUserReport(chatId, period, env);
+            const reportMessage = formatReportMessage(report, period);
+            await sendMessage(chatId, reportMessage, env);
+          } else if (args === 'success' || args === 'success_rate') {
+            // 显示成功率
+            const stats = await getUserStats(chatId, env);
+            const successRateMessage = formatSuccessRateMessage(stats);
+            await sendMessage(chatId, successRateMessage, env);
+          } else {
+            // 默认显示综合统计信息
+            const stats = await getUserStats(chatId, env);
+            const statsMessage = formatStatsMessage(stats);
+            await sendMessage(chatId, statsMessage, env);
+            
+            // 显示命令帮助
+            const helpMessage = `
+📊 *统计分析命令帮助* 📊
+
+您可以使用以下格式查看不同类型的统计:
+
+/analytics - 显示综合统计信息(总览)
+/analytics storage - 显示存储使用情况
+/analytics report - 显示月度使用报告
+/analytics daily - 显示日报告
+/analytics weekly - 显示周报告
+/analytics monthly - 显示月报告
+/analytics success - 显示上传成功率分析
+`;
+            
+            await sendMessage(chatId, helpMessage, env);
+          }
+          
+          console.log("/analytics命令响应已发送");
+        } catch (error) {
+          console.error("发送/analytics消息失败:", error);
+          await sendMessage(chatId, `❌ 获取统计信息失败: ${error.message}`, env);
         }
       } else {
         console.log("未知命令:", command);
@@ -343,6 +450,13 @@ async function handlePhoto(message, chatId, env) {
         } else {
           await sendMessage(chatId, msgText, env);
         }
+        
+        // 更新用户统计数据
+        await updateUserStats(chatId, {
+          fileType: 'image',
+          fileSize: actualFileSize,
+          success: true
+        }, env);
       } else {
         const errorMsg = `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`;
         if (messageId) {
@@ -350,6 +464,13 @@ async function handlePhoto(message, chatId, env) {
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
+        
+        // 更新失败统计
+        await updateUserStats(chatId, {
+          fileType: 'image',
+          fileSize: fileSize,
+          success: false
+        }, env);
       }
     } catch (error) {
       console.error('处理图片上传时出错:', error);
@@ -457,6 +578,13 @@ async function handleVideo(message, chatId, isDocument = false, env) {
         } else {
           await sendMessage(chatId, msgText, env);
         }
+        
+        // 更新用户统计数据
+        await updateUserStats(chatId, {
+          fileType: 'video',
+          fileSize: actualFileSize,
+          success: true
+        }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取视频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
         if (messageId) {
@@ -464,6 +592,13 @@ async function handleVideo(message, chatId, isDocument = false, env) {
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
+        
+        // 更新失败统计
+        await updateUserStats(chatId, {
+          fileType: 'video',
+          fileSize: videoSize,
+          success: false
+        }, env);
       }
     } catch (error) {
       console.error('处理视频时出错:', error);
@@ -585,6 +720,13 @@ async function handleAudio(message, chatId, isDocument = false, env) {
         } else {
           await sendMessage(chatId, msgText, env);
         }
+        
+        // 更新用户统计数据
+        await updateUserStats(chatId, {
+          fileType: 'audio',
+          fileSize: actualFileSize,
+          success: true
+        }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取音频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
         if (messageId) {
@@ -592,6 +734,13 @@ async function handleAudio(message, chatId, isDocument = false, env) {
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
+        
+        // 更新失败统计
+        await updateUserStats(chatId, {
+          fileType: 'audio',
+          fileSize: audioSize,
+          success: false
+        }, env);
       }
     } catch (error) {
       console.error('处理音频时出错:', error);
@@ -713,6 +862,13 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
         } else {
           await sendMessage(chatId, msgText, env);
         }
+        
+        // 更新用户统计数据
+        await updateUserStats(chatId, {
+          fileType: 'animation',
+          fileSize: actualFileSize,
+          success: true
+        }, env);
       } else {
         const errorMsg = `⚠️ 无法从图床获取动画链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
         if (messageId) {
@@ -720,6 +876,13 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
+        
+        // 更新失败统计
+        await updateUserStats(chatId, {
+          fileType: 'animation',
+          fileSize: animSize,
+          success: false
+        }, env);
       }
     } catch (error) {
       console.error('处理动画时出错:', error);
@@ -1193,33 +1356,53 @@ function getFileIcon(filename, mimeType) {
       }
       
       // 可执行文件和系统镜像
-      if (['exe', 'msi', 'apk', 'ipa', 'app', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage', 'iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf', 'qcow2', 'pvm', 'dsk', 'hdd', 'bin', 'cue', 'mds', 'mdf', 'nrg', 'ccd', 'cif', 'c2d', 'daa', 'b6t', 'b5t', 'bwt', 'isz', 'cdi', 'flp', 'uif', 'xdi', 'sdi'].includes(ext)) {
+      if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage', 'apk', 'ipa'].includes(ext)) {
         return '⚙️';
       }
       
-      // 网页和脚本文件
-      if (['html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'php', 'py', 'rb', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'swift', 'kt', 'rs', 'dart', 'lua', 'groovy', 'scala', 'perl', 'r', 'sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'psm1', 'vbs', 'sql', 'yaml', 'yml', 'toml', 'wasm', 'wat'].includes(ext)) {
-        return '🌐';
+      // 光盘镜像
+      if (['iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf'].includes(ext)) {
+        return '💿';
       }
       
-      // 字体文件
-      if (['ttf', 'otf', 'woff', 'woff2', 'eot'].includes(ext)) {
-        return '🔤';
+      // 小众图像格式
+      if (['tiff', 'tif', 'bmp', 'pcx', 'tga', 'icns', 'heic', 'heif', 'arw', 'cr2', 'nef', 'orf', 'rw2', 'dng', 'raf', 'raw'].includes(ext)) {
+        return '🖼️';
       }
       
-      // 3D、游戏和设计文件
-      if (['obj', 'fbx', 'blend', 'stl', 'psd', 'ai', 'eps', 'sketch', 'fig', 'svg', 'dae', '3ds', 'gltf', 'glb', 'mb', 'unity3d', 'unitypackage', 'max', 'c4d', 'w3x', 'pk3', 'wad', 'bsp', 'map', 'rom', 'n64', 'z64', 'v64', 'nes', 'smc', 'sfc', 'gb', 'gbc', 'gba', 'nds'].includes(ext)) {
+      // 小众档案格式
+      if (['z', 'lz', 'lzma', 'lzo', 'rz', 'sfx', 'cab', 'arj', 'lha', 'lzh', 'zoo', 'arc', 'ace', 'dgc', 'dgn', 'lbr', 'pak', 'pit', 'sit', 'sqx', 'gz.gpg', 'z.gpg'].includes(ext)) {
+        return '🗜️';
+      }
+      
+      // 小众视频格式
+      if (['rmvb', 'rm', 'asf', 'amv', 'mts', 'm2ts', 'vob', 'divx', 'mpeg', 'mpg', 'mpe', 'tp', 'ts', 'ogm', 'ogv'].includes(ext)) {
+        return '🎬';
+      }
+      
+      // 小众音频格式
+      if (['ape', 'wma', 'ra', 'amr', 'au', 'voc', 'ac3', 'dsf', 'dsd', 'dts', 'dtsma', 'ast', 'aiff', 'aifc', 'spx', 'gsm', 'wv', 'tta', 'mpc', 'tak'].includes(ext)) {
+        return '🎵';
+      }
+      
+      // 小众电子书和文档格式
+      if (['lit', 'lrf', 'opf', 'prc', 'azw1', 'azw4', 'azw6', 'cbz', 'cbr', 'cb7', 'cbt', 'cba', 'chm', 'xps', 'oxps', 'ps', 'dvi'].includes(ext)) {
+        return '📝';
+      }
+      
+      // 小众开发和数据格式
+      if (['wasm', 'wat', 'f', 'for', 'f90', 'f95', 'hs', 'lhs', 'elm', 'clj', 'csv', 'tsv', 'parquet', 'avro', 'proto', 'pbtxt', 'fbs'].includes(ext)) {
+        return '📄';
+      }
+      
+      // 3D和游戏相关格式
+      if (['obj', 'fbx', 'dae', '3ds', 'stl', 'gltf', 'glb', 'blend', 'mb', 'unity3d', 'unitypackage', 'max', 'c4d', 'w3x', 'pk3', 'wad', 'bsp', 'map', 'rom', 'n64', 'z64', 'v64', 'nes', 'smc', 'sfc', 'gb', 'gbc', 'gba', 'nds'].includes(ext)) {
         return '🎨';
       }
       
-      // 科学和专业数据文件
-      if (['mat', 'fits', 'hdf', 'hdf5', 'h5', 'nx', 'ngc', 'nxs', 'nb', 'cdf', 'nc', 'spss', 'sav', 'dta', 'do', 'odb', 'odt', 'ott', 'odp', 'otp', 'ods', 'ots', 'parquet', 'avro', 'proto', 'pbtxt', 'fbs'].includes(ext)) {
+      // 科学和专业格式
+      if (['mat', 'fits', 'hdf', 'hdf5', 'h5', 'nx', 'ngc', 'nxs', 'nb', 'cdf', 'nc', 'spss', 'sav', 'dta', 'do', 'odb', 'odt', 'ott', 'odp', 'otp', 'ods', 'ots'].includes(ext)) {
         return '📊';
-      }
-      
-      // 其他特殊文件
-      if (['torrent', 'ico', 'crx', 'xpi', 'jar', 'war', 'ear', 'srt', 'vtt', 'ass', 'ssa'].includes(ext)) {
-        return '📄';
       }
     }
   }
@@ -1280,5 +1463,282 @@ function isExtValid(fileExt) {
     'obj', 'fbx', 'dae', '3ds', 'stl', 'gltf', 'glb', 'blend', 'mb', 'unity3d', 'unitypackage', 'max', 'c4d', 'w3x', 'pk3', 'wad', 'bsp', 'map', 'rom', 'n64', 'z64', 'v64', 'nes', 'smc', 'sfc', 'gb', 'gbc', 'gba', 'nds',
     // 科学和专业格式
     'mat', 'fits', 'hdf', 'hdf5', 'h5', 'nx', 'ngc', 'nxs', 'nb', 'cdf', 'nc', 'spss', 'sav', 'dta', 'do', 'odb', 'odt', 'ott', 'odp', 'otp', 'ods', 'ots'
-  ].includes(fileExt);
+  ].includes(fileExt.toLowerCase());
+}
+
+// 更新用户统计数据
+async function updateUserStats(chatId, data, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      console.log("KV存储未配置，跳过统计更新");
+      return;
+    }
+    
+    const statsKey = `user_stats_${chatId}`;
+    const userStats = await getUserStats(chatId, env);
+    
+    // 更新总上传数据
+    userStats.totalUploads += 1;
+    
+    // 更新文件类型计数
+    const fileType = data.fileType || 'other';
+    userStats.fileTypes[fileType] = (userStats.fileTypes[fileType] || 0) + 1;
+    
+    // 更新总大小
+    if (data.fileSize) {
+      userStats.totalSize += data.fileSize;
+    }
+    
+    // 更新成功/失败计数
+    if (data.success) {
+      userStats.successfulUploads += 1;
+    } else {
+      userStats.failedUploads += 1;
+    }
+    
+    // 更新时间记录
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    // 日报告
+    if (!userStats.dailyData[todayStr]) {
+      userStats.dailyData[todayStr] = {
+        uploads: 0,
+        size: 0,
+        successful: 0,
+        failed: 0
+      };
+    }
+    userStats.dailyData[todayStr].uploads += 1;
+    userStats.dailyData[todayStr].size += (data.fileSize || 0);
+    if (data.success) {
+      userStats.dailyData[todayStr].successful += 1;
+    } else {
+      userStats.dailyData[todayStr].failed += 1;
+    }
+    
+    // 限制dailyData大小，保留最近60天的数据
+    const dailyKeys = Object.keys(userStats.dailyData).sort();
+    if (dailyKeys.length > 60) {
+      const keysToRemove = dailyKeys.slice(0, dailyKeys.length - 60);
+      keysToRemove.forEach(key => {
+        delete userStats.dailyData[key];
+      });
+    }
+    
+    // 保存更新后的统计数据
+    await env.STATS_STORAGE.put(statsKey, JSON.stringify(userStats));
+    console.log(`已更新用户${chatId}的统计数据`);
+  } catch (error) {
+    console.error(`更新用户统计数据时出错:`, error);
+  }
+}
+
+// 获取用户统计数据
+async function getUserStats(chatId, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      console.log("KV存储未配置，返回空统计");
+      return createEmptyStats();
+    }
+    
+    const statsKey = `user_stats_${chatId}`;
+    const storedStats = await env.STATS_STORAGE.get(statsKey);
+    
+    if (!storedStats) {
+      return createEmptyStats();
+    }
+    
+    return JSON.parse(storedStats);
+  } catch (error) {
+    console.error(`获取用户统计数据时出错:`, error);
+    return createEmptyStats();
+  }
+}
+
+// 创建空的统计数据结构
+function createEmptyStats() {
+  return {
+    totalUploads: 0,
+    successfulUploads: 0,
+    failedUploads: 0,
+    totalSize: 0,
+    fileTypes: {},
+    dailyData: {},
+    createdAt: new Date().toISOString()
+  };
+}
+
+// 获取用户报告
+async function getUserReport(chatId, period, env) {
+  const stats = await getUserStats(chatId, env);
+  
+  // 获取当前日期
+  const now = new Date();
+  const report = {
+    period: period,
+    data: {}
+  };
+  
+  if (period === 'daily') {
+    // 日报表只返回今天的数据
+    const todayStr = now.toISOString().split('T')[0];
+    if (stats.dailyData[todayStr]) {
+      report.data[todayStr] = stats.dailyData[todayStr];
+    }
+  } else if (period === 'weekly') {
+    // 周报表返回过去7天的数据
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      if (stats.dailyData[dateStr]) {
+        report.data[dateStr] = stats.dailyData[dateStr];
+      }
+    }
+  } else {
+    // 月报表返回过去30天的数据
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      if (stats.dailyData[dateStr]) {
+        report.data[dateStr] = stats.dailyData[dateStr];
+      }
+    }
+  }
+  
+  return report;
+}
+
+// 格式化统计消息
+function formatStatsMessage(stats) {
+  let message = `📊 *用户统计信息* 📊\n\n`;
+  
+  message += `📤 *总上传文件*: ${stats.totalUploads} 个文件\n`;
+  message += `📦 *总存储空间*: ${formatFileSize(stats.totalSize)}\n`;
+  message += `✅ *成功上传*: ${stats.successfulUploads} 个文件\n`;
+  message += `❌ *失败上传*: ${stats.failedUploads} 个文件\n\n`;
+  
+  // 计算成功率
+  const successRate = stats.totalUploads > 0 
+    ? Math.round((stats.successfulUploads / stats.totalUploads) * 100) 
+    : 0;
+  
+  message += `📈 *上传成功率*: ${successRate}%\n\n`;
+  
+  // 文件类型统计
+  message += `*文件类型分布*:\n`;
+  for (const [type, count] of Object.entries(stats.fileTypes)) {
+    const icon = type === 'image' ? '🖼️' : 
+                type === 'video' ? '🎬' : 
+                type === 'audio' ? '🎵' : 
+                type === 'animation' ? '🎞️' : 
+                type === 'document' ? '📄' : '📁';
+    
+    message += `${icon} ${type}: ${count} 个文件\n`;
+  }
+  
+  return message;
+}
+
+// 格式化存储消息
+function formatStorageMessage(stats) {
+  let message = `📊 *存储使用情况* 📊\n\n`;
+  
+  message += `📦 *总存储空间*: ${formatFileSize(stats.totalSize)}\n\n`;
+  
+  // 基于文件类型的存储分布
+  message += `*存储空间分布*:\n`;
+  
+  // 遍历dailyData计算每种文件类型的总大小
+  // 由于现在无法直接追踪每种类型的大小，这里只能显示总体情况
+  
+  // 计算平均文件大小
+  const avgFileSize = stats.totalUploads > 0 
+    ? stats.totalSize / stats.totalUploads 
+    : 0;
+  
+  message += `📊 *平均文件大小*: ${formatFileSize(avgFileSize)}\n\n`;
+  
+  // 添加使用趋势
+  message += `📈 *存储使用趋势*:\n`;
+  message += `使用 /report 命令查看详细的使用报告\n`;
+  
+  return message;
+}
+
+// 格式化报告消息
+function formatReportMessage(report, period) {
+  const periodName = period === 'daily' ? '日' : 
+                   period === 'weekly' ? '周' : '月';
+  
+  let message = `📊 *${periodName}度报告* 📊\n\n`;
+  
+  // 计算总计
+  let totalUploads = 0;
+  let totalSize = 0;
+  let totalSuccessful = 0;
+  let totalFailed = 0;
+  
+  for (const data of Object.values(report.data)) {
+    totalUploads += data.uploads || 0;
+    totalSize += data.size || 0;
+    totalSuccessful += data.successful || 0;
+    totalFailed += data.failed || 0;
+  }
+  
+  message += `📤 *总上传文件*: ${totalUploads} 个文件\n`;
+  message += `📦 *总存储空间*: ${formatFileSize(totalSize)}\n`;
+  message += `✅ *成功上传*: ${totalSuccessful} 个文件\n`;
+  message += `❌ *失败上传*: ${totalFailed} 个文件\n\n`;
+  
+  // 每日/每周/每月数据
+  message += `*${periodName}度数据明细*:\n`;
+  
+  // 按日期排序
+  const sortedDates = Object.keys(report.data).sort();
+  
+  for (const date of sortedDates) {
+    const data = report.data[date];
+    message += `📅 ${date}: ${data.uploads || 0} 个文件, ${formatFileSize(data.size || 0)}\n`;
+  }
+  
+  return message;
+}
+
+// 格式化成功率消息
+function formatSuccessRateMessage(stats) {
+  let message = `📊 *上传成功率分析* 📊\n\n`;
+  
+  // 计算总体成功率
+  const successRate = stats.totalUploads > 0 
+    ? Math.round((stats.successfulUploads / stats.totalUploads) * 100) 
+    : 0;
+  
+  message += `✅ *总体成功率*: ${successRate}%\n`;
+  message += `📤 *总上传*: ${stats.totalUploads} 个文件\n`;
+  message += `✓ *成功上传*: ${stats.successfulUploads} 个文件\n`;
+  message += `✗ *失败上传*: ${stats.failedUploads} 个文件\n\n`;
+  
+  // 按文件类型的成功率
+  message += `*各文件类型成功率*:\n`;
+  for (const [type, count] of Object.entries(stats.fileTypes)) {
+    // 由于我们没有按类型跟踪成功/失败，这里只显示总数
+    const icon = type === 'image' ? '🖼️' : 
+               type === 'video' ? '🎬' : 
+               type === 'audio' ? '🎵' : 
+               type === 'animation' ? '🎞️' : 
+               type === 'document' ? '📄' : '📁';
+    
+    message += `${icon} ${type}: ${count} 个文件\n`;
+  }
+  
+  // 添加时间趋势
+  message += `\n📈 *使用频率*:\n`;
+  message += `使用 /report 命令查看详细的使用报告\n`;
+  
+  return message;
 }
