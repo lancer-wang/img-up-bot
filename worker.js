@@ -215,23 +215,6 @@ async function handleRequest(request, env) {
             const stats = await getUserStats(chatId, env);
             const statsMessage = formatStatsMessage(stats);
             await sendMessage(chatId, statsMessage, env);
-            
-            // 显示命令帮助
-            const helpMessage = `
-📊 *统计分析命令帮助* 📊
-
-您可以使用以下格式查看不同类型的统计:
-
-/analytics - 显示综合统计信息(总览)
-/analytics storage - 显示存储使用情况
-/analytics report - 显示月度使用报告
-/analytics daily - 显示日报告
-/analytics weekly - 显示周报告
-/analytics monthly - 显示月报告
-/analytics success - 显示上传成功率分析
-`;
-            
-            await sendMessage(chatId, helpMessage, env);
           }
           
           console.log("/analytics命令响应已发送");
