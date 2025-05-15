@@ -230,6 +230,7 @@ async function handleRequest(request, env) {
           let page = 1;
           let fileType = null;
           let searchQuery = null;
+          let descQuery = null; // 新增：专门用于备注搜索的查询
           
           // 寻找搜索关键词
           if (text.includes('search:') || text.includes('搜索:')) {
@@ -239,12 +240,20 @@ async function handleRequest(request, env) {
             }
           }
           
+          // 寻找备注搜索关键词
+          if (text.includes('desc:') || text.includes('备注:')) {
+            const descMatch = text.match(/(desc:|备注:)\s*([^\s]+)/i);
+            if (descMatch && descMatch[2]) {
+              descQuery = descMatch[2].trim();
+            }
+          }
+          
           // 解析页码参数
           for (let i = 1; i < args.length; i++) {
             const arg = args[i].toLowerCase();
             
             // 如果已经找到搜索关键词，跳过后续处理
-            if (searchQuery) continue;
+            if (searchQuery || descQuery) continue;
             
             if (arg.startsWith('p') || arg.startsWith('page')) {
               const pageNum = parseInt(arg.replace(/^p(age)?/, ''));
@@ -255,10 +264,12 @@ async function handleRequest(request, env) {
               fileType = arg;
             } else if (arg.startsWith('search:') || arg.startsWith('搜索:')) {
               searchQuery = arg.split(':')[1];
+            } else if (arg.startsWith('desc:') || arg.startsWith('备注:')) {
+              descQuery = arg.split(':')[1];
             }
           }
           
-          await handleHistoryCommand(chatId, page, fileType, searchQuery, env);
+          await handleHistoryCommand(chatId, page, fileType, searchQuery, descQuery, env);
         } catch (error) {
           console.error("发送/history消息失败:", error);
           await sendMessage(chatId, `❌ 获取历史记录失败: ${error.message}`, env);
@@ -1830,7 +1841,7 @@ function formatSuccessRateMessage(stats) {
 }
 
 // 处理历史命令
-async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
+async function handleHistoryCommand(chatId, page, fileType, searchQuery, descQuery, env) {
   try {
     // 每页显示的记录数
     const ITEMS_PER_PAGE = 5;
@@ -1878,6 +1889,19 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
       }
     }
     
+    // 备注搜索功能：根据备注关键词过滤
+    if (descQuery) {
+      const descQueryLower = descQuery.toLowerCase();
+      filteredHistory = filteredHistory.filter(entry => 
+        entry.description && entry.description.toLowerCase().includes(descQueryLower)
+      );
+      
+      if (filteredHistory.length === 0) {
+        await sendMessage(chatId, `📂 没有找到包含备注关键词 "${descQuery}" 的上传记录。`, env);
+        return;
+      }
+    }
+    
     // 计算总页数
     const totalPages = Math.ceil(filteredHistory.length / ITEMS_PER_PAGE);
     
@@ -1891,7 +1915,7 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
     const pageRecords = filteredHistory.slice(startIndex, endIndex);
     
     // 生成历史记录消息
-    let message = `📋 *上传历史记录* ${fileType ? `(${fileType})` : ''} ${searchQuery ? `🔍搜索: "${searchQuery}"` : ''}\n\n`;
+    let message = `📋 *上传历史记录* ${fileType ? `(${fileType})` : ''} ${searchQuery ? `🔍搜索: "${searchQuery}"` : ''} ${descQuery ? `🔍备注搜索: "${descQuery}"` : ''}\n\n`;
     
     for (let i = 0; i < pageRecords.length; i++) {
       const record = pageRecords[i];
@@ -1924,14 +1948,21 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, env) {
     }
     
     // 添加筛选说明
-    if (!fileType && !searchQuery) {
+    if (!fileType && !searchQuery && !descQuery) {
       message += `\n\n可按文件类型筛选:\n/history image - 仅查看图片\n/history video - 仅查看视频\n/history document - 仅查看文档`;
-    } else if (!searchQuery) {
+    } else if (!searchQuery && !descQuery) {
       message += `\n\n使用 /history 查看所有类型的文件`;
+    } else if (!descQuery) {
+      message += `\n\n使用 /history search:关键词 查看包含关键词的文件`;
+    } else {
+      message += `\n\n使用 /history desc:关键词 查看包含备注关键词的文件`;
     }
     
     // 添加搜索说明
     message += `\n\n🔍 要搜索文件名或备注，请使用:\n/history search:关键词`;
+    
+    // 添加备注搜索说明
+    message += `\n\n🔍 要搜索备注，请使用:\n/history desc:关键词`;
     
     // 添加删除说明
     message += `\n\n🗑️ 要删除某条记录，请使用:\n/history delete_记录ID`;
