@@ -66,6 +66,7 @@ async function handleRequest(request, env) {
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE; // 可选的认证代码
+  const ADMIN_USERS = env.ADMIN_USERS ? env.ADMIN_USERS.split(',').map(id => id.trim()) : []; // 管理员用户ID列表
 
   // 检查必要的环境变量是否存在
   if (!IMG_BED_URL || !BOT_TOKEN) {
@@ -91,17 +92,158 @@ async function handleRequest(request, env) {
 
     const message = update.message;
     const chatId = message.chat.id;
+    const userId = message.from.id; // 获取用户ID
+    const username = message.from.username || '未知用户';
     const text = message.text?.trim();
+    
+    // 检查用户是否被禁止使用机器人
+    const isBanned = await isUserBanned(userId, env);
+    const isAdmin = ADMIN_USERS.includes(userId.toString());
+    
+    // 如果用户被禁止且不是管理员，则拒绝处理请求
+    if (isBanned && !isAdmin) {
+      await sendMessage(chatId, `⛔ 很抱歉，您已被管理员限制使用本机器人。如需解除限制，请联系管理员。`, env);
+      return new Response('OK', { status: 200 });
+    }
 
     // 处理命令
     if (text && text.startsWith('/')) {
       console.log("收到命令:", text);
       const command = text.split(' ')[0];
+      
+      // 管理员命令
+      if (command === '/admin' && isAdmin) {
+        const subCommand = text.split(' ')[1]?.toLowerCase();
+        const targetId = text.split(' ')[2];
+        
+        if (!subCommand) {
+          // 显示管理员帮助
+          await sendMessage(chatId, `🔐 *管理员命令面板*\n\n以下是可用的管理员命令：\n\n/admin ban [用户ID] - 限制指定用户使用机器人\n/admin unban [用户ID] - 解除对指定用户的限制\n/admin list - 查看所有被限制的用户\n/admin users - 查看所有使用过机器人的用户\n/admin stats - 查看机器人使用统计\n/admin broadcast [消息] - 向所有用户广播消息`, env);
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'ban' && targetId) {
+          await banUser(targetId, username, env);
+          await sendMessage(chatId, `✅ 已限制用户 ${targetId} 使用机器人`, env);
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'unban' && targetId) {
+          await unbanUser(targetId, env);
+          await sendMessage(chatId, `✅ 已解除对用户 ${targetId} 的限制`, env);
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'list') {
+          const bannedUsers = await getBannedUsers(env);
+          if (bannedUsers.length === 0) {
+            await sendMessage(chatId, `📋 当前没有被限制的用户`, env);
+          } else {
+            let message = `📋 *被限制的用户列表*\n\n`;
+            bannedUsers.forEach((user, index) => {
+              message += `${index + 1}. 用户ID: ${user.userId}\n   封禁原因: ${user.reason || '未指定'}\n   封禁时间: ${formatDate(user.bannedAt)}\n   操作管理员: ${user.bannedBy || '未知'}\n\n`;
+            });
+            await sendMessage(chatId, message, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'users') {
+          // 获取所有用户详细信息
+          const usersList = await getAllUsersDetails(env);
+          
+          if (usersList.length === 0) {
+            await sendMessage(chatId, `📋 目前没有用户使用过机器人`, env);
+          } else {
+            let message = `👥 *用户列表* (共${usersList.length}人)\n\n`;
+            
+            // 添加分页功能
+            const page = parseInt(targetId) || 1;
+            const itemsPerPage = 10;
+            const totalPages = Math.ceil(usersList.length / itemsPerPage);
+            const startIndex = (page - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, usersList.length);
+            
+            message += `📄 当前页码: ${page}/${totalPages}\n\n`;
+            
+            // 只显示当前页的用户
+            const pageUsers = usersList.slice(startIndex, endIndex);
+            
+            for (let i = 0; i < pageUsers.length; i++) {
+              const user = pageUsers[i];
+              const userNumber = startIndex + i + 1;
+              const isBanned = await isUserBanned(user.userId, env);
+              
+              message += `${userNumber}. 用户ID: ${user.userId}\n`;
+              message += `   用户名: ${user.username || '未知'}\n`;
+              message += `   首次使用: ${formatDate(user.firstSeen)}\n`;
+              message += `   最后使用: ${formatDate(user.lastSeen)}\n`;
+              
+              // 获取该用户的上传统计
+              const userStats = await getUserStats(user.userId, env);
+              message += `   上传文件: ${userStats.totalUploads || 0} 个\n`;
+              message += `   存储空间: ${formatFileSize(userStats.totalSize || 0)}\n`;
+              message += `   状态: ${isBanned ? '⛔已限制' : '✅正常'}\n\n`;
+            }
+            
+            // 添加翻页指引
+            if (totalPages > 1) {
+              message += `\n翻页指令:\n`;
+              if (page > 1) {
+                message += `/admin users ${page - 1} - 上一页\n`;
+              }
+              if (page < totalPages) {
+                message += `/admin users ${page + 1} - 下一页\n`;
+              }
+            }
+            
+            await sendMessage(chatId, message, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'stats') {
+          // 获取机器人使用统计
+          const stats = await getBotStats(env);
+          let message = `📊 *机器人使用统计*\n\n`;
+          message += `👥 总用户数: ${stats.totalUsers || 0}\n`;
+          message += `📤 总上传文件数: ${stats.totalUploads || 0}\n`;
+          message += `📦 总上传大小: ${formatFileSize(stats.totalSize || 0)}\n`;
+          message += `⛔ 被限制用户数: ${stats.bannedUsers || 0}\n`;
+          await sendMessage(chatId, message, env);
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'broadcast' && text.split(' ').slice(2).join(' ')) {
+          const broadcastMessage = text.split(' ').slice(2).join(' ');
+          // 获取所有用户并发送广播
+          const users = await getAllUsers(env);
+          
+          await sendMessage(chatId, `🔄 正在向 ${users.length} 个用户发送广播消息...`, env);
+          
+          let successCount = 0;
+          for (const user of users) {
+            try {
+              await sendMessage(user, `📢 *管理员广播*\n\n${broadcastMessage}`, env);
+              successCount++;
+            } catch (error) {
+              console.error(`向用户 ${user} 发送广播失败:`, error);
+            }
+          }
+          
+          await sendMessage(chatId, `✅ 广播完成！成功发送给 ${successCount}/${users.length} 个用户`, env);
+          return new Response('OK', { status: 200 });
+        }
+      }
+      
       if (command === '/start') {
         try {
           console.log("开始处理/start命令");
           const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等400多种格式。发送文件时添加文字描述可作为文件备注，方便后续查找。支持最大20Mb的文件上传(Telegram Bot自身限制)。', env);
           console.log("/start命令响应:", JSON.stringify(result).substring(0, 200));
+          
+          // 记录用户使用，更新用户列表
+          await addUserToList(userId, username, env);
         } catch (error) {
           console.error("发送/start消息失败:", error);
         }
@@ -2064,5 +2206,225 @@ function getFileTypeIcon(fileType) {
     case 'animation': return '🎞️';
     case 'document': return '📄';
     default: return '📁';
+  }
+}
+
+// 检查用户是否被禁止
+async function isUserBanned(userId, env) {
+  try {
+    if (!env.STATS_STORAGE) return false;
+    
+    const bannedUsersKey = 'banned_users';
+    const bannedUsersData = await env.STATS_STORAGE.get(bannedUsersKey);
+    
+    if (!bannedUsersData) return false;
+    
+    const bannedUsers = JSON.parse(bannedUsersData);
+    return bannedUsers.some(user => user.userId.toString() === userId.toString());
+  } catch (error) {
+    console.error('检查用户是否被禁止时出错:', error);
+    return false;
+  }
+}
+
+// 禁止用户
+async function banUser(userId, reason, env) {
+  try {
+    if (!env.STATS_STORAGE) return false;
+    
+    const bannedUsersKey = 'banned_users';
+    const bannedUsersData = await env.STATS_STORAGE.get(bannedUsersKey);
+    
+    let bannedUsers = [];
+    if (bannedUsersData) {
+      bannedUsers = JSON.parse(bannedUsersData);
+    }
+    
+    // 检查用户是否已被禁止
+    const existingIndex = bannedUsers.findIndex(user => user.userId.toString() === userId.toString());
+    
+    if (existingIndex !== -1) {
+      // 更新禁止信息
+      bannedUsers[existingIndex] = {
+        ...bannedUsers[existingIndex],
+        reason: reason,
+        bannedAt: new Date().toISOString()
+      };
+    } else {
+      // 添加新的禁止用户
+      bannedUsers.push({
+        userId: userId,
+        reason: reason,
+        bannedAt: new Date().toISOString(),
+        bannedBy: 'admin' // 可以改为记录真实管理员ID或名称
+      });
+    }
+    
+    await env.STATS_STORAGE.put(bannedUsersKey, JSON.stringify(bannedUsers));
+    return true;
+  } catch (error) {
+    console.error('禁止用户时出错:', error);
+    return false;
+  }
+}
+
+// 解除用户禁止
+async function unbanUser(userId, env) {
+  try {
+    if (!env.STATS_STORAGE) return false;
+    
+    const bannedUsersKey = 'banned_users';
+    const bannedUsersData = await env.STATS_STORAGE.get(bannedUsersKey);
+    
+    if (!bannedUsersData) return true; // 没有禁止列表，直接返回成功
+    
+    let bannedUsers = JSON.parse(bannedUsersData);
+    
+    // 移除指定用户
+    bannedUsers = bannedUsers.filter(user => user.userId.toString() !== userId.toString());
+    
+    await env.STATS_STORAGE.put(bannedUsersKey, JSON.stringify(bannedUsers));
+    return true;
+  } catch (error) {
+    console.error('解除用户禁止时出错:', error);
+    return false;
+  }
+}
+
+// 获取被禁止的用户列表
+async function getBannedUsers(env) {
+  try {
+    if (!env.STATS_STORAGE) return [];
+    
+    const bannedUsersKey = 'banned_users';
+    const bannedUsersData = await env.STATS_STORAGE.get(bannedUsersKey);
+    
+    if (!bannedUsersData) return [];
+    
+    return JSON.parse(bannedUsersData);
+  } catch (error) {
+    console.error('获取被禁止用户列表时出错:', error);
+    return [];
+  }
+}
+
+// 添加用户到用户列表
+async function addUserToList(userId, username, env) {
+  try {
+    if (!env.STATS_STORAGE) return false;
+    
+    const usersListKey = 'users_list';
+    const usersListData = await env.STATS_STORAGE.get(usersListKey);
+    
+    let usersList = [];
+    if (usersListData) {
+      usersList = JSON.parse(usersListData);
+    }
+    
+    // 检查用户是否已存在
+    const existingIndex = usersList.findIndex(user => user.userId.toString() === userId.toString());
+    
+    if (existingIndex !== -1) {
+      // 更新用户信息
+      usersList[existingIndex] = {
+        ...usersList[existingIndex],
+        username: username,
+        lastSeen: new Date().toISOString()
+      };
+    } else {
+      // 添加新用户
+      usersList.push({
+        userId: userId,
+        username: username,
+        firstSeen: new Date().toISOString(),
+        lastSeen: new Date().toISOString()
+      });
+    }
+    
+    await env.STATS_STORAGE.put(usersListKey, JSON.stringify(usersList));
+    return true;
+  } catch (error) {
+    console.error('添加用户到用户列表时出错:', error);
+    return false;
+  }
+}
+
+// 获取所有用户
+async function getAllUsers(env) {
+  try {
+    if (!env.STATS_STORAGE) return [];
+    
+    const usersListKey = 'users_list';
+    const usersListData = await env.STATS_STORAGE.get(usersListKey);
+    
+    if (!usersListData) return [];
+    
+    const usersList = JSON.parse(usersListData);
+    return usersList.map(user => user.userId);
+  } catch (error) {
+    console.error('获取所有用户时出错:', error);
+    return [];
+  }
+}
+
+// 获取机器人使用统计
+async function getBotStats(env) {
+  try {
+    if (!env.STATS_STORAGE) return {};
+    
+    // 获取用户列表
+    const usersListKey = 'users_list';
+    const usersListData = await env.STATS_STORAGE.get(usersListKey);
+    let usersList = [];
+    if (usersListData) {
+      usersList = JSON.parse(usersListData);
+    }
+    
+    // 获取被禁止用户列表
+    const bannedUsers = await getBannedUsers(env);
+    
+    // 计算总上传统计
+    let totalUploads = 0;
+    let totalSize = 0;
+    
+    // 遍历所有用户获取上传统计
+    for (const user of usersList) {
+      const statsKey = `user_stats_${user.userId}`;
+      const userStatsData = await env.STATS_STORAGE.get(statsKey);
+      
+      if (userStatsData) {
+        const userStats = JSON.parse(userStatsData);
+        totalUploads += userStats.totalUploads || 0;
+        totalSize += userStats.totalSize || 0;
+      }
+    }
+    
+    return {
+      totalUsers: usersList.length,
+      totalUploads: totalUploads,
+      totalSize: totalSize,
+      bannedUsers: bannedUsers.length
+    };
+  } catch (error) {
+    console.error('获取机器人使用统计时出错:', error);
+    return {};
+  }
+}
+
+// 获取所有用户的详细信息
+async function getAllUsersDetails(env) {
+  try {
+    if (!env.STATS_STORAGE) return [];
+    
+    const usersListKey = 'users_list';
+    const usersListData = await env.STATS_STORAGE.get(usersListKey);
+    
+    if (!usersListData) return [];
+    
+    // 返回完整的用户信息列表，包括时间、用户名等
+    return JSON.parse(usersListData);
+  } catch (error) {
+    console.error('获取所有用户详细信息时出错:', error);
+    return [];
   }
 }
