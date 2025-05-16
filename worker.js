@@ -288,10 +288,22 @@ async function handleRequest(request, env) {
         }
       }
       
+      // 添加分片上传命令
+      if (command === '/chunk_upload' || command === '/chunk' || command === '/chunk_start') {
+        await handleChunkUploadStart(chatId, userId, message, env);
+        return new Response('OK', { status: 200 });
+      }
+      
+      // 处理取消分片上传命令
+      if (command === '/chunk_cancel') {
+        await handleChunkUploadCancel(chatId, userId, env);
+        return new Response('OK', { status: 200 });
+      }
+      
       if (command === '/start') {
         try {
           console.log("开始处理/start命令");
-          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等400多种格式。发送文件时添加文字描述可作为文件备注，方便后续查找。支持最大20Mb的文件上传(Telegram Bot自身限制)。', env);
+          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等400多种格式。发送文件时添加文字描述可作为文件备注，方便后续查找。支持最大20Mb的文件上传(Telegram Bot自身限制)。\n\n需要上传大文件？试试 /chunk_upload 命令启动分片上传！', env);
           console.log("/start命令响应:", JSON.stringify(result).substring(0, 200));
           
           // 记录用户使用，更新用户列表
@@ -302,7 +314,7 @@ async function handleRequest(request, env) {
       } else if (command === '/help') {
         try {
           console.log("开始处理/help命令");
-          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 发送图片视频文件时填入文字描述可作为文件备注，方便后续查找。\n4. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n5. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n6. 使用 /formats 命令查看支持的文件格式类别。\n7. 使用 /analytics 命令查看所有统计分析（支持多种参数）。\n8. 使用 /history 命令查看您的上传历史记录。\n9. 此机器人由 @uki0x 开发', env);
+          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 发送图片视频文件时填入文字描述可作为文件备注，方便后续查找。\n4. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n5. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n6. 使用 /formats 命令查看支持的文件格式类别。\n7. 使用 /analytics 命令查看所有统计分析（支持多种参数）。\n8. 使用 /history 命令查看您的上传历史记录。\n9. 使用 /chunk_upload 命令启动分片上传模式，突破20MB限制。\n10. 此机器人由 @uki0x 开发', env);
           console.log("/help命令响应:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
           console.error("发送/help消息失败:", error);
@@ -476,6 +488,14 @@ async function handleRequest(request, env) {
           console.error("发送未知命令消息失败:", error);
         }
       }
+      return new Response('OK', { status: 200 });
+    }
+
+    // 检查是否处于分片上传模式
+    const isInChunkUploadMode = await isUserInChunkUploadMode(userId, env);
+    if (isInChunkUploadMode) {
+      // 处理分片上传中的消息
+      await handleChunkUploadMessage(message, chatId, userId, env);
       return new Response('OK', { status: 200 });
     }
 
@@ -2661,4 +2681,514 @@ async function checkAndExecuteAutoClean(env) {
   } catch (error) {
     console.error('执行自动清理时出错:', error);
   }
+}
+
+// ===== 分片上传功能实现 =====
+
+// 检查用户是否处于分片上传模式
+async function isUserInChunkUploadMode(userId, env) {
+  try {
+    if (!env.STATS_STORAGE) return false;
+    
+    const chunkStateKey = `chunk_state_${userId}`;
+    const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
+    
+    return !!chunkStateData; // 如果有状态数据，说明用户处于分片上传模式
+  } catch (error) {
+    console.error('检查用户分片上传模式时出错:', error);
+    return false;
+  }
+}
+
+// 启动分片上传流程
+async function handleChunkUploadStart(chatId, userId, message, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      await sendMessage(chatId, "❌ 无法启动分片上传，存储服务未配置", env);
+      return;
+    }
+    
+    // 检查用户是否已经在分片上传模式
+    const isInMode = await isUserInChunkUploadMode(userId, env);
+    if (isInMode) {
+      await sendMessage(chatId, "⚠️ 您已经在分片上传模式中。\n\n继续发送文件分片，或使用 /chunk_cancel 取消当前上传。", env);
+      return;
+    }
+    
+    // 解析参数，获取文件名和分片数量
+    const args = message.text.split(' ');
+    let totalChunks = 0;
+    let fileName = "";
+    let fileDescription = "";
+    
+    if (args.length >= 2) {
+      // 可能是 /chunk_upload 5 file.zip 或 /chunk_upload file.zip
+      if (!isNaN(parseInt(args[1]))) {
+        totalChunks = parseInt(args[1]);
+        fileName = args.length >= 3 ? args[2] : "merged_file";
+      } else {
+        fileName = args[1];
+      }
+      
+      // 提取文件描述（如果有）
+      if (args.length > (totalChunks ? 3 : 2)) {
+        fileDescription = args.slice(totalChunks ? 3 : 2).join(' ');
+      }
+    }
+    
+    // 如果未指定分片数，提示用户输入
+    if (totalChunks <= 0) {
+      await sendMessage(chatId, "🔄 请输入分片数量和文件名：\n\n格式：`/chunk_upload 分片数量 文件名 [文件描述]`\n\n例如：`/chunk_upload 5 large_video.mp4 我的大视频`", env);
+      return;
+    }
+    
+    // 文件名验证
+    if (!fileName || fileName.length < 2) {
+      fileName = `chunked_file_${Date.now()}`;
+    }
+    
+    // 创建上传会话状态
+    const chunkState = {
+      userId: userId,
+      chatId: chatId,
+      fileName: fileName,
+      description: fileDescription,
+      totalChunks: totalChunks,
+      receivedChunks: 0,
+      chunks: {},
+      startTime: getChineseISOString(),
+      lastActivity: getChineseISOString(),
+      totalSize: 0,
+      status: 'waiting' // waiting, receiving, merging, complete, failed
+    };
+    
+    // 保存会话状态
+    const chunkStateKey = `chunk_state_${userId}`;
+    await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
+    
+    // 发送开始消息
+    const instructionMsg = `📤 *分片上传已启动*\n\n` +
+                          `📋 文件名: ${fileName}\n` +
+                          `📦 总分片数: ${totalChunks}\n` +
+                          `📝 文件描述: ${fileDescription || '无'}\n\n` +
+                          `请按照以下步骤操作:\n` +
+                          `1. 请逐个发送文件分片（总共${totalChunks}个分片）\n` +
+                          `2. 分片将按照发送顺序合并\n` +
+                          `3. 所有分片上传完成后，系统将自动合并并上传\n\n` +
+                          `⚠️ 注意事项:\n` +
+                          `- 分片必须小于20MB\n` +
+                          `- 分片上传过程中请勿发送其他消息\n` +
+                          `- 使用 /chunk_cancel 取消上传\n\n` +
+                          `🔄 请发送第1个分片...`;
+    
+    await sendMessage(chatId, instructionMsg, env);
+  } catch (error) {
+    console.error('启动分片上传时出错:', error);
+    await sendMessage(chatId, `❌ 启动分片上传时出错: ${error.message}`, env);
+  }
+}
+
+// 处理分片上传中的消息
+async function handleChunkUploadMessage(message, chatId, userId, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      await sendMessage(chatId, "❌ 存储服务未配置，无法继续分片上传", env);
+      return;
+    }
+    
+    // 获取当前会话状态
+    const chunkStateKey = `chunk_state_${userId}`;
+    const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
+    
+    if (!chunkStateData) {
+      await sendMessage(chatId, "❌ 分片上传会话已失效，请重新开始。使用 /chunk_upload 命令启动新的上传。", env);
+      return;
+    }
+    
+    let chunkState = JSON.parse(chunkStateData);
+    
+    // 检查是否是取消命令
+    if (message.text && message.text.startsWith('/chunk_cancel')) {
+      await handleChunkUploadCancel(chatId, userId, env);
+      return;
+    }
+    
+    // 检查是否收到文件
+    let fileId = null;
+    let fileType = 'document';
+    let fileName = '';
+    let fileSize = 0;
+    
+    if (message.document) {
+      fileId = message.document.file_id;
+      fileName = message.document.file_name || `chunk_${chunkState.receivedChunks + 1}`;
+      fileSize = message.document.file_size || 0;
+    } else if (message.photo && message.photo.length > 0) {
+      fileId = message.photo[message.photo.length - 1].file_id;
+      fileType = 'image';
+      fileName = `image_chunk_${chunkState.receivedChunks + 1}.jpg`;
+      fileSize = message.photo[message.photo.length - 1].file_size || 0;
+    } else if (message.video) {
+      fileId = message.video.file_id;
+      fileType = 'video';
+      fileName = message.video.file_name || `video_chunk_${chunkState.receivedChunks + 1}.mp4`;
+      fileSize = message.video.file_size || 0;
+    } else if (message.audio) {
+      fileId = message.audio.file_id;
+      fileType = 'audio';
+      fileName = message.audio.file_name || `audio_chunk_${chunkState.receivedChunks + 1}.mp3`;
+      fileSize = message.audio.file_size || 0;
+    } else if (message.animation) {
+      fileId = message.animation.file_id;
+      fileType = 'animation';
+      fileName = message.animation.file_name || `animation_chunk_${chunkState.receivedChunks + 1}.gif`;
+      fileSize = message.animation.file_size || 0;
+    } else {
+      // 如果不是文件消息，发送提醒
+      await sendMessage(chatId, `⚠️ 请发送文件分片。您已上传 ${chunkState.receivedChunks}/${chunkState.totalChunks} 个分片。`, env);
+      return;
+    }
+    
+    // 发送处理消息
+    const sendResult = await sendMessage(chatId, `🔄 正在处理第 ${chunkState.receivedChunks + 1}/${chunkState.totalChunks} 个分片...`, env);
+    const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
+    
+    try {
+      // 获取文件
+      const fileInfo = await getFile(fileId, env);
+      
+      if (!fileInfo || !fileInfo.ok) {
+        throw new Error('获取文件信息失败');
+      }
+      
+      const filePath = fileInfo.result.file_path;
+      const fileUrl = `https://api.telegram.org/file/bot${env.BOT_TOKEN}/${filePath}`;
+      
+      // 下载文件内容
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error(`下载文件失败: ${response.status}`);
+      }
+      
+      const buffer = await response.arrayBuffer();
+      
+      // 更新会话状态
+      chunkState.receivedChunks += 1;
+      chunkState.lastActivity = getChineseISOString();
+      chunkState.totalSize += buffer.byteLength;
+      chunkState.status = 'receiving';
+      
+      // 使用KV存储分片数据（如果分片过大，可能需要使用Cloudflare R2或其他对象存储）
+      const chunkKey = `chunk_${userId}_${chunkState.receivedChunks}`;
+      await env.STATS_STORAGE.put(chunkKey, buffer);
+      
+      // 更新分片信息
+      chunkState.chunks[chunkState.receivedChunks] = {
+        key: chunkKey,
+        size: buffer.byteLength,
+        originalName: fileName,
+        type: fileType
+      };
+      
+      // 发送进度消息
+      const progressMsg = `✅ 已接收第 ${chunkState.receivedChunks}/${chunkState.totalChunks} 个分片\n` +
+                        `📦 大小: ${formatFileSize(buffer.byteLength)}\n` +
+                        `📋 文件名: ${fileName}\n` +
+                        `📊 总进度: ${Math.round((chunkState.receivedChunks / chunkState.totalChunks) * 100)}%`;
+      
+      if (messageId) {
+        await editMessage(chatId, messageId, progressMsg, env);
+      } else {
+        await sendMessage(chatId, progressMsg, env);
+      }
+      
+      // 检查是否所有分片都已接收
+      if (chunkState.receivedChunks === chunkState.totalChunks) {
+        // 所有分片接收完毕，开始合并
+        await sendMessage(chatId, `🔄 所有分片已接收，正在合并文件...`, env);
+        
+        // 更新状态
+        chunkState.status = 'merging';
+        await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
+        
+        // 合并文件并上传
+        await mergeAndUploadChunks(chatId, userId, env);
+      } else {
+        // 保存更新后的会话状态
+        await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
+        
+        // 提示上传下一个分片
+        await sendMessage(chatId, `🔄 请发送第 ${chunkState.receivedChunks + 1}/${chunkState.totalChunks} 个分片...`, env);
+      }
+    } catch (error) {
+      console.error('处理分片时出错:', error);
+      
+      if (messageId) {
+        await editMessage(chatId, messageId, `❌ 处理分片时出错: ${error.message}`, env);
+      } else {
+        await sendMessage(chatId, `❌ 处理分片时出错: ${error.message}`, env);
+      }
+      
+      // 更新状态为失败
+      chunkState.status = 'failed';
+      await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
+    }
+  } catch (error) {
+    console.error('处理分片上传消息时出错:', error);
+    await sendMessage(chatId, `❌ 处理分片上传时出错: ${error.message}`, env);
+  }
+}
+
+// 取消分片上传
+async function handleChunkUploadCancel(chatId, userId, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      await sendMessage(chatId, "❌ 存储服务未配置，无法取消上传", env);
+      return;
+    }
+    
+    // 获取当前会话状态
+    const chunkStateKey = `chunk_state_${userId}`;
+    const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
+    
+    if (!chunkStateData) {
+      await sendMessage(chatId, "⚠️ 没有正在进行的分片上传", env);
+      return;
+    }
+    
+    // 解析会话状态
+    const chunkState = JSON.parse(chunkStateData);
+    
+    // 删除所有分片数据
+    for (const chunkNum in chunkState.chunks) {
+      const chunkKey = chunkState.chunks[chunkNum].key;
+      await env.STATS_STORAGE.delete(chunkKey);
+    }
+    
+    // 删除会话状态
+    await env.STATS_STORAGE.delete(chunkStateKey);
+    
+    // 发送取消消息
+    await sendMessage(chatId, "✅ 分片上传已取消，所有临时数据已清除", env);
+  } catch (error) {
+    console.error('取消分片上传时出错:', error);
+    await sendMessage(chatId, `❌ 取消分片上传时出错: ${error.message}`, env);
+  }
+}
+
+// 合并分片并上传
+async function mergeAndUploadChunks(chatId, userId, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      await sendMessage(chatId, "❌ 存储服务未配置，无法合并分片", env);
+      return;
+    }
+    
+    // 获取当前会话状态
+    const chunkStateKey = `chunk_state_${userId}`;
+    const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
+    
+    if (!chunkStateData) {
+      await sendMessage(chatId, "❌ 分片上传会话已失效", env);
+      return;
+    }
+    
+    const chunkState = JSON.parse(chunkStateData);
+    
+    // 发送处理消息
+    const sendResult = await sendMessage(chatId, `🔄 正在合并 ${chunkState.totalChunks} 个分片并上传文件...`, env);
+    const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
+    
+    try {
+      // 合并所有分片
+      let mergedBuffer = new Uint8Array(chunkState.totalSize);
+      let offset = 0;
+      
+      // 按顺序合并分片
+      for (let i = 1; i <= chunkState.totalChunks; i++) {
+        const chunkInfo = chunkState.chunks[i];
+        if (!chunkInfo) {
+          throw new Error(`缺少第 ${i} 个分片`);
+        }
+        
+        // 获取分片数据
+        const chunkData = await env.STATS_STORAGE.get(chunkInfo.key, 'arrayBuffer');
+        if (!chunkData) {
+          throw new Error(`无法获取第 ${i} 个分片数据`);
+        }
+        
+        // 复制到合并缓冲区
+        new Uint8Array(mergedBuffer.buffer).set(new Uint8Array(chunkData), offset);
+        offset += chunkData.byteLength;
+        
+        // 更新进度
+        if (messageId) {
+          await editMessage(chatId, messageId, `🔄 正在合并: ${i}/${chunkState.totalChunks} 个分片 (${Math.round((i / chunkState.totalChunks) * 100)}%)`, env);
+        }
+      }
+      
+      // 准备上传
+      if (messageId) {
+        await editMessage(chatId, messageId, `🔄 分片合并完成，正在上传文件...`, env);
+      }
+      
+      // 上传合并后的文件
+      const formData = new FormData();
+      const mimeType = getMimeTypeFromFileName(chunkState.fileName);
+      formData.append('file', new File([mergedBuffer], chunkState.fileName, { type: mimeType }));
+      
+      const uploadUrl = new URL(env.IMG_BED_URL + "/upload");
+      uploadUrl.searchParams.append('returnFormat', 'full');
+      
+      if (env.AUTH_CODE) {
+        uploadUrl.searchParams.append('authCode', env.AUTH_CODE);
+      }
+      
+      console.log(`分片合并后的文件上传请求 URL: ${uploadUrl.toString()}`);
+      
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: env.AUTH_CODE ? { 'Authorization': `Bearer ${env.AUTH_CODE}` } : {},
+        body: formData
+      });
+      
+      const responseText = await uploadResponse.text();
+      console.log('合并文件上传原始响应:', responseText);
+      
+      let uploadResult;
+      try {
+        uploadResult = JSON.parse(responseText);
+      } catch (e) {
+        uploadResult = responseText;
+      }
+      
+      const extractedResult = extractUrlFromResult(uploadResult, env.IMG_BED_URL);
+      const fileUrl = extractedResult.url;
+      
+      if (fileUrl) {
+        // 上传成功
+        chunkState.status = 'complete';
+        chunkState.finalUrl = fileUrl;
+        await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
+        
+        // 构建成功消息
+        let successMsg = `✅ 分片上传成功！\n\n` +
+                        `📄 文件名: ${chunkState.fileName}\n`;
+        
+        // 如果有文件描述，添加备注信息
+        if (chunkState.description) {
+          successMsg += `📝 备注: ${chunkState.description}\n`;
+        }
+        
+        successMsg += `📦 文件大小: ${formatFileSize(chunkState.totalSize)}\n` +
+                     `🧩 分片数量: ${chunkState.totalChunks}\n\n` +
+                     `🔗 URL：${fileUrl}`;
+        
+        if (messageId) {
+          await editMessage(chatId, messageId, successMsg, env);
+        } else {
+          await sendMessage(chatId, successMsg, env);
+        }
+        
+        // 更新用户统计数据
+        await updateUserStats(chatId, {
+          fileType: 'document',
+          fileSize: chunkState.totalSize,
+          success: true,
+          fileName: chunkState.fileName,
+          url: fileUrl,
+          description: chunkState.description
+        }, env);
+        
+        // 清理临时分片数据
+        cleanupChunkData(userId, chunkState, env);
+      } else {
+        // 上传失败
+        throw new Error('无法获取上传URL');
+      }
+    } catch (error) {
+      console.error('合并分片并上传时出错:', error);
+      
+      if (messageId) {
+        await editMessage(chatId, messageId, `❌ 合并分片并上传时出错: ${error.message}`, env);
+      } else {
+        await sendMessage(chatId, `❌ 合并分片并上传时出错: ${error.message}`, env);
+      }
+      
+      // 更新状态为失败
+      chunkState.status = 'failed';
+      await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
+    }
+  } catch (error) {
+    console.error('合并分片并上传时出错:', error);
+    await sendMessage(chatId, `❌ 合并分片并上传时出错: ${error.message}`, env);
+  }
+}
+
+// 清理分片数据
+async function cleanupChunkData(userId, chunkState, env) {
+  try {
+    // 删除所有分片数据
+    for (const chunkNum in chunkState.chunks) {
+      const chunkKey = chunkState.chunks[chunkNum].key;
+      await env.STATS_STORAGE.delete(chunkKey);
+    }
+    
+    // 删除会话状态
+    const chunkStateKey = `chunk_state_${userId}`;
+    await env.STATS_STORAGE.delete(chunkStateKey);
+    
+    console.log(`已清理用户 ${userId} 的分片上传临时数据`);
+  } catch (error) {
+    console.error('清理分片数据时出错:', error);
+  }
+}
+
+// 根据文件名获取MIME类型
+function getMimeTypeFromFileName(fileName) {
+  if (!fileName) return 'application/octet-stream';
+  
+  const ext = fileName.split('.').pop().toLowerCase();
+  
+  // 图片类型
+  if (['jpg', 'jpeg'].includes(ext)) return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'svg') return 'image/svg+xml';
+  
+  // 视频类型
+  if (['mp4', 'm4v'].includes(ext)) return 'video/mp4';
+  if (ext === 'webm') return 'video/webm';
+  if (ext === 'avi') return 'video/x-msvideo';
+  if (ext === 'mov') return 'video/quicktime';
+  if (ext === 'wmv') return 'video/x-ms-wmv';
+  if (ext === 'flv') return 'video/x-flv';
+  
+  // 音频类型
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'wav') return 'audio/wav';
+  if (ext === 'ogg') return 'audio/ogg';
+  if (ext === 'flac') return 'audio/flac';
+  if (ext === 'aac') return 'audio/aac';
+  if (ext === 'm4a') return 'audio/mp4';
+  
+  // 文档类型
+  if (ext === 'pdf') return 'application/pdf';
+  if (['doc', 'docx'].includes(ext)) return 'application/msword';
+  if (['xls', 'xlsx'].includes(ext)) return 'application/vnd.ms-excel';
+  if (['ppt', 'pptx'].includes(ext)) return 'application/vnd.ms-powerpoint';
+  if (ext === 'txt') return 'text/plain';
+  if (ext === 'html') return 'text/html';
+  if (ext === 'css') return 'text/css';
+  if (ext === 'js') return 'application/javascript';
+  
+  // 压缩文件
+  if (ext === 'zip') return 'application/zip';
+  if (ext === 'rar') return 'application/x-rar-compressed';
+  if (ext === '7z') return 'application/x-7z-compressed';
+  if (['tar', 'gz', 'bz2'].includes(ext)) return 'application/x-compressed';
+  
+  // 默认二进制类型
+  return 'application/octet-stream';
 }
