@@ -431,6 +431,8 @@ async function handleRequest(request, env) {
     if (message.photo && message.photo.length > 0) {
       try {
         console.log(`开始处理图片，长度: ${message.photo.length}`);
+        // 确保用户被添加到用户列表
+        await addUserToList(userId, username, env);
         await handlePhoto(message, chatId, env);
       } catch (error) {
         console.error("处理图片时出错:", error);
@@ -443,6 +445,8 @@ async function handleRequest(request, env) {
              message.document.file_name?.match(/\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|3gp|mpeg|mpg|ts|rmvb|rm|asf|amv|mts|m2ts|vob|divx|ogm|ogv)$/i)))) {
       try {
         console.log(`开始处理视频，类型: ${message.video ? 'video' : 'document'}`);
+        // 确保用户被添加到用户列表
+        await addUserToList(userId, username, env);
         await handleVideo(message, chatId, !!message.document, env);
       } catch (error) {
         console.error('处理视频时出错:', error);
@@ -465,6 +469,8 @@ async function handleRequest(request, env) {
              message.document.file_name?.match(/\.(mp3|wav|ogg|flac|aac|m4a|wma|opus|mid|midi|ape|ra|amr|au|voc|ac3|dsf|dsd|dts|ast|aiff|aifc|spx|gsm|wv|tta|mpc|tak)$/i)))) {
       try {
         console.log(`开始处理音频，类型: ${message.audio ? 'audio' : 'document'}`);
+        // 确保用户被添加到用户列表
+        await addUserToList(userId, username, env);
         await handleAudio(message, chatId, !!message.document, env);
       } catch (error) {
         console.error('处理音频时出错:', error);
@@ -487,6 +493,8 @@ async function handleRequest(request, env) {
              message.document.file_name?.match(/\.(gif|webp|apng|flif|avif)$/i)))) {
       try {
         console.log(`开始处理动画，类型: ${message.animation ? 'animation' : 'document'}`);
+        // 确保用户被添加到用户列表
+        await addUserToList(userId, username, env);
         await handleAnimation(message, chatId, !!message.document, env);
       } catch (error) {
         console.error('处理动画时出错:', error);
@@ -507,6 +515,8 @@ async function handleRequest(request, env) {
     else if (message.document) {
       try {
         console.log(`开始处理文档，mime类型: ${message.document.mime_type || '未知'}`);
+        // 确保用户被添加到用户列表
+        await addUserToList(userId, username, env);
         await handleDocument(message, chatId, env);
       } catch (error) {
         console.error('处理文件时出错:', error);
