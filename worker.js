@@ -73,6 +73,13 @@ async function handleRequest(request, env) {
     console.error("环境变量缺失: IMG_BED_URL=", !!IMG_BED_URL, "BOT_TOKEN=", !!BOT_TOKEN);
     return new Response('必要的环境变量 (IMG_BED_URL, BOT_TOKEN) 未配置', { status: 500 });
   }
+  
+  // 检查并执行自动清理（放在处理请求的开始，避免频繁清理）
+  try {
+    await checkAndExecuteAutoClean(env);
+  } catch (error) {
+    console.error("执行自动清理检查时出错:", error);
+  }
 
   console.log("环境变量检查通过: IMG_BED_URL=", IMG_BED_URL.substring(0, 8) + '...', "AUTH_CODE=", AUTH_CODE ? '[已设置]' : '[未设置]');
 
@@ -118,7 +125,7 @@ async function handleRequest(request, env) {
         
         if (!subCommand) {
           // 显示管理员帮助
-          await sendMessage(chatId, `🔐 *管理员命令面板*\n\n以下是可用的管理员命令：\n\n/admin ban [用户ID] - 限制指定用户使用机器人\n/admin unban [用户ID] - 解除对指定用户的限制\n/admin list - 查看所有被限制的用户\n/admin users - 查看所有使用过机器人的用户\n/admin stats - 查看机器人使用统计\n/admin broadcast [消息] - 向所有用户广播消息`, env);
+          await sendMessage(chatId, `🔐 *管理员命令面板*\n\n以下是可用的管理员命令：\n\n/admin ban [用户ID] - 限制指定用户使用机器人\n/admin unban [用户ID] - 解除对指定用户的限制\n/admin list - 查看所有被限制的用户\n/admin users - 查看所有使用过机器人的用户\n/admin stats - 查看机器人使用统计\n/admin broadcast [消息] - 向所有用户广播消息\n/admin autoclean [天数] - 设置自动删除多少天前的内容\n/admin autoclean status - 查看当前自动清理设置`, env);
           return new Response('OK', { status: 200 });
         }
         
@@ -232,6 +239,51 @@ async function handleRequest(request, env) {
           }
           
           await sendMessage(chatId, `✅ 广播完成！成功发送给 ${successCount}/${users.length} 个用户`, env);
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'autoclean') {
+          // 获取第三个参数作为天数或命令
+          const daysOrCommand = text.split(' ')[2];
+          
+          if (!daysOrCommand) {
+            await sendMessage(chatId, `❌ 请指定要自动删除的天数，例如：\n/admin autoclean 30\n\n或者查看当前设置：\n/admin autoclean status`, env);
+            return new Response('OK', { status: 200 });
+          }
+          
+          if (daysOrCommand.toLowerCase() === 'status') {
+            // 查看当前自动清理设置
+            const settings = await getAutoCleanSettings(env);
+            if (settings && settings.enabled) {
+              await sendMessage(chatId, `⚙️ *自动清理设置*\n\n✅ 状态：已启用\n⏰ 删除时间：${settings.days} 天前的内容\n🕒 设置时间：${formatDate(settings.updatedAt)}\n\n要修改设置，请使用：\n/admin autoclean [天数]\n\n要禁用自动清理，请使用：\n/admin autoclean 0`, env);
+            } else {
+              await sendMessage(chatId, `⚙️ *自动清理设置*\n\n❌ 状态：未启用\n\n要启用自动清理，请使用：\n/admin autoclean [天数]`, env);
+            }
+            return new Response('OK', { status: 200 });
+          }
+          
+          // 解析天数
+          const days = parseInt(daysOrCommand);
+          if (isNaN(days) || days < 0) {
+            await sendMessage(chatId, `❌ 天数必须是大于或等于0的整数。0表示禁用自动清理。`, env);
+            return new Response('OK', { status: 200 });
+          }
+          
+          // 更新自动清理设置
+          if (days === 0) {
+            // 禁用自动清理
+            await updateAutoCleanSettings({ enabled: false }, env);
+            await sendMessage(chatId, `✅ 已禁用自动清理功能。`, env);
+          } else {
+            // 启用自动清理
+            await updateAutoCleanSettings({ enabled: true, days: days }, env);
+            await sendMessage(chatId, `✅ 已设置自动清理 ${days} 天前的内容。\n\n系统将在每次请求时检查并清理符合条件的记录。`, env);
+            
+            // 执行一次立即清理
+            const cleanedCount = await cleanOldRecords(days, env);
+            await sendMessage(chatId, `🧹 已立即清理了 ${cleanedCount} 条符合条件的记录。`, env);
+          }
+          
           return new Response('OK', { status: 200 });
         }
       }
@@ -2469,4 +2521,144 @@ function getChineseISOString() {
   // 将中国时间转换回UTC以获得正确的ISO字符串
   const utcTime = new Date(chinaTime.getTime() - 8 * 60 * 60 * 1000);
   return utcTime.toISOString();
+}
+
+// 获取自动清理设置
+async function getAutoCleanSettings(env) {
+  try {
+    if (!env.STATS_STORAGE) return null;
+    
+    const settingsKey = 'auto_clean_settings';
+    const settingsData = await env.STATS_STORAGE.get(settingsKey);
+    
+    if (!settingsData) return null;
+    
+    return JSON.parse(settingsData);
+  } catch (error) {
+    console.error('获取自动清理设置时出错:', error);
+    return null;
+  }
+}
+
+// 更新自动清理设置
+async function updateAutoCleanSettings(settings, env) {
+  try {
+    if (!env.STATS_STORAGE) return false;
+    
+    const settingsKey = 'auto_clean_settings';
+    
+    // 获取当前设置
+    const currentSettingsData = await env.STATS_STORAGE.get(settingsKey);
+    let currentSettings = {};
+    
+    if (currentSettingsData) {
+      currentSettings = JSON.parse(currentSettingsData);
+    }
+    
+    // 合并新旧设置
+    const newSettings = {
+      ...currentSettings,
+      ...settings,
+      updatedAt: getChineseISOString()
+    };
+    
+    await env.STATS_STORAGE.put(settingsKey, JSON.stringify(newSettings));
+    return true;
+  } catch (error) {
+    console.error('更新自动清理设置时出错:', error);
+    return false;
+  }
+}
+
+// 清理指定天数之前的记录
+async function cleanOldRecords(days, env) {
+  try {
+    if (!env.STATS_STORAGE) return 0;
+    
+    // 获取所有用户
+    const users = await getAllUsersDetails(env);
+    let totalCleanedCount = 0;
+    
+    // 计算截止日期（当前时间减去指定天数）
+    const now = new Date();
+    const cutoffDate = new Date(now.getTime() - (days * 24 * 60 * 60 * 1000));
+    const cutoffDateStr = cutoffDate.toISOString();
+    
+    console.log(`开始清理 ${days} 天前的记录，截止日期: ${cutoffDateStr}`);
+    
+    // 遍历所有用户，清理他们的记录
+    for (const user of users) {
+      const userId = user.userId;
+      const statsKey = `user_stats_${userId}`;
+      const userStatsData = await env.STATS_STORAGE.get(statsKey);
+      
+      if (userStatsData) {
+        const userStats = JSON.parse(userStatsData);
+        
+        // 如果有上传历史，清理过期的记录
+        if (userStats.uploadHistory && userStats.uploadHistory.length > 0) {
+          const originalLength = userStats.uploadHistory.length;
+          
+          // 过滤保留截止日期之后的记录
+          userStats.uploadHistory = userStats.uploadHistory.filter(record => {
+            // 检查记录的时间戳是否晚于截止日期
+            return record.timestamp > cutoffDateStr;
+          });
+          
+          const cleanedCount = originalLength - userStats.uploadHistory.length;
+          totalCleanedCount += cleanedCount;
+          
+          if (cleanedCount > 0) {
+            console.log(`为用户 ${userId} 清理了 ${cleanedCount} 条记录`);
+            
+            // 保存更新后的用户统计数据
+            await env.STATS_STORAGE.put(statsKey, JSON.stringify(userStats));
+          }
+        }
+      }
+    }
+    
+    console.log(`总共清理了 ${totalCleanedCount} 条记录`);
+    return totalCleanedCount;
+  } catch (error) {
+    console.error('清理旧记录时出错:', error);
+    return 0;
+  }
+}
+
+// 检查并执行自动清理
+async function checkAndExecuteAutoClean(env) {
+  try {
+    const settings = await getAutoCleanSettings(env);
+    
+    // 如果启用了自动清理，且设置了有效的天数
+    if (settings && settings.enabled && settings.days > 0) {
+      // 检查上次清理时间，避免频繁清理
+      const lastCleanTime = settings.lastCleanTime ? new Date(settings.lastCleanTime) : null;
+      const now = new Date();
+      
+      // 如果从未清理过或者距离上次清理已经过了至少6小时
+      const SIX_HOURS = 6 * 60 * 60 * 1000; // 6小时的毫秒数
+      if (!lastCleanTime || (now.getTime() - lastCleanTime.getTime() > SIX_HOURS)) {
+        console.log(`执行自动清理，清理 ${settings.days} 天前的记录`);
+        
+        // 执行清理操作
+        const cleanedCount = await cleanOldRecords(settings.days, env);
+        
+        // 更新最后清理时间
+        await updateAutoCleanSettings({
+          ...settings,
+          lastCleanTime: now.toISOString()
+        }, env);
+        
+        if (cleanedCount > 0) {
+          console.log(`自动清理完成，共清理了 ${cleanedCount} 条记录`);
+        }
+      } else {
+        console.log(`上次清理时间为 ${lastCleanTime.toISOString()}，尚未达到清理间隔（6小时），跳过清理`);
+      }
+    }
+  } catch (error) {
+    console.error('执行自动清理时出错:', error);
+  }
 }
