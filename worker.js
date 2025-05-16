@@ -1743,7 +1743,7 @@ async function updateUserStats(chatId, data, env) {
       // 创建历史记录条目
       const historyEntry = {
         id: Date.now().toString(), // 使用时间戳作为唯一ID
-        timestamp: new Date().toISOString(),
+        timestamp: getChineseISOString(),
         fileName: data.fileName || `file_${Date.now()}`,
         fileType: fileType,
         fileSize: data.fileSize || 0,
@@ -1764,7 +1764,7 @@ async function updateUserStats(chatId, data, env) {
     }
     
     // 更新时间记录
-    const now = new Date();
+    const now = getCurrentChineseTime();
     const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
     
     // 日报告
@@ -1832,7 +1832,7 @@ function createEmptyStats() {
     totalSize: 0,
     fileTypes: {},
     dailyData: {},
-    createdAt: new Date().toISOString(),
+    createdAt: getChineseISOString(),
     uploadHistory: [] // 添加上传历史数组
   };
 }
@@ -1841,8 +1841,8 @@ function createEmptyStats() {
 async function getUserReport(chatId, period, env) {
   const stats = await getUserStats(chatId, env);
   
-  // 获取当前日期
-  const now = new Date();
+  // 获取当前东八区日期
+  const now = getCurrentChineseTime();
   const report = {
     period: period,
     data: {}
@@ -1850,6 +1850,7 @@ async function getUserReport(chatId, period, env) {
   
   if (period === 'daily') {
     // 日报表只返回今天的数据
+    // 确保使用东八区日期
     const todayStr = now.toISOString().split('T')[0];
     if (stats.dailyData[todayStr]) {
       report.data[todayStr] = stats.dailyData[todayStr];
@@ -1859,7 +1860,9 @@ async function getUserReport(chatId, period, env) {
     for (let i = 0; i < 7; i++) {
       const date = new Date(now);
       date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
+      // 确保使用东八区日期
+      const chinaDate = toChineseTime(date);
+      const dateStr = chinaDate.toISOString().split('T')[0];
       
       if (stats.dailyData[dateStr]) {
         report.data[dateStr] = stats.dailyData[dateStr];
@@ -1870,7 +1873,9 @@ async function getUserReport(chatId, period, env) {
     for (let i = 0; i < 30; i++) {
       const date = new Date(now);
       date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
+      // 确保使用东八区日期
+      const chinaDate = toChineseTime(date);
+      const dateStr = chinaDate.toISOString().split('T')[0];
       
       if (stats.dailyData[dateStr]) {
         report.data[dateStr] = stats.dailyData[dateStr];
@@ -2091,7 +2096,9 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, descQue
     for (let i = 0; i < pageRecords.length; i++) {
       const record = pageRecords[i];
       const date = new Date(record.timestamp);
-      const formattedDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      // 使用东八区时间
+      const chinaDate = toChineseTime(date);
+      const formattedDate = `${chinaDate.getFullYear()}-${String(chinaDate.getMonth() + 1).padStart(2, '0')}-${String(chinaDate.getDate()).padStart(2, '0')} ${String(chinaDate.getHours()).padStart(2, '0')}:${String(chinaDate.getMinutes()).padStart(2, '0')}`;
       
       // 获取文件类型图标
       const fileIcon = getFileTypeIcon(record.fileType);
@@ -2201,10 +2208,21 @@ async function handleDeleteHistoryRecord(chatId, recordId, env) {
 function formatDate(dateString) {
   try {
     const date = new Date(dateString);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    // 调整为东八区时间
+    const chinaDate = toChineseTime(date);
+    return `${chinaDate.getFullYear()}-${String(chinaDate.getMonth() + 1).padStart(2, '0')}-${String(chinaDate.getDate()).padStart(2, '0')} ${String(chinaDate.getHours()).padStart(2, '0')}:${String(chinaDate.getMinutes()).padStart(2, '0')}`;
   } catch (e) {
     return dateString;
   }
+}
+
+// 将时间转换为东八区（中国）时间
+function toChineseTime(date) {
+  // 创建一个新的日期对象，避免修改原始对象
+  const chinaDate = new Date(date);
+  // 调整为东八区，加上8小时的毫秒数
+  chinaDate.setTime(chinaDate.getTime() + 8 * 60 * 60 * 1000);
+  return chinaDate;
 }
 
 // 获取文件类型图标
@@ -2258,14 +2276,14 @@ async function banUser(userId, reason, env) {
       bannedUsers[existingIndex] = {
         ...bannedUsers[existingIndex],
         reason: reason,
-        bannedAt: new Date().toISOString()
+        bannedAt: getChineseISOString()
       };
     } else {
       // 添加新的禁止用户
       bannedUsers.push({
         userId: userId,
         reason: reason,
-        bannedAt: new Date().toISOString(),
+        bannedAt: getChineseISOString(),
         bannedBy: 'admin' // 可以改为记录真实管理员ID或名称
       });
     }
@@ -2339,15 +2357,15 @@ async function addUserToList(userId, username, env) {
       usersList[existingIndex] = {
         ...usersList[existingIndex],
         username: username,
-        lastSeen: new Date().toISOString()
+        lastSeen: getChineseISOString()
       };
     } else {
       // 添加新用户
       usersList.push({
         userId: userId,
         username: username,
-        firstSeen: new Date().toISOString(),
-        lastSeen: new Date().toISOString()
+        firstSeen: getChineseISOString(),
+        lastSeen: getChineseISOString()
       });
     }
     
@@ -2437,4 +2455,18 @@ async function getAllUsersDetails(env) {
     console.error('获取所有用户详细信息时出错:', error);
     return [];
   }
+}
+
+// 创建一个获取当前东八区时间的函数
+function getCurrentChineseTime() {
+  return toChineseTime(new Date());
+}
+
+// 创建一个获取当前东八区时间的ISO字符串的函数
+function getChineseISOString() {
+  // 获取当前中国时间
+  const chinaTime = getCurrentChineseTime();
+  // 将中国时间转换回UTC以获得正确的ISO字符串
+  const utcTime = new Date(chinaTime.getTime() - 8 * 60 * 60 * 1000);
+  return utcTime.toISOString();
 }
