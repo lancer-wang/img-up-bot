@@ -104,7 +104,7 @@
     *   **记下 BotFather 返回的 `HTTP API token`**，这就是您的 `BOT_TOKEN`。
 
 2.  **准备图床信息**:
-    *   确定您的图床或对象存储服务的**上传接口 URL**。注意：图床上传端点通常为 `/upload`，如 `https://your.domain/upload`。这将是 `IMG_BED_URL` 的值。
+    *   确定您的图床或对象存储服务的**上传接口 URL**。这将是 `IMG_BED_URL` 的值，需要包含完整的上传路径（例如 `https://your.domain/upload`）。
     *   如果上传需要认证码，**获取该认证码**。这将是 `AUTH_CODE` 的值。如果不需要认证，则此项为空。
 
 3.  **创建 KV 命名空间（用于统计功能）**:
@@ -121,9 +121,8 @@
     **方法一：通过 Cloudflare Dashboard 导入 GitHub 仓库 (推荐)**
     
     * 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
-    * 点击 Workers & Pages -> 创建应用程序 -> 连接 Git
-    * 选择 GitHub 并授权 Cloudflare 访问您的 GitHub 帐户
-    * 选择您 fork 的仓库 -> 选择"Pages"部署类型
+    * 点击计算(Workers)-->Workers 和 PAGES-->创建
+    * 选择Workers-->导入存储库--> 选择刚刚fork的仓库
     * 在"构建设置"部分:
       - 构建命令：留空
       - 构建输出目录：留空
@@ -398,7 +397,7 @@ ADMIN_USERS=123456789,987654321
    * 检查 Cloudflare Worker 的日志以查看详细错误信息
 
 2. **上传失败**
-   * 确认图床URL是否包含正确的上传路径（通常为 `/upload`）
+   * 确认图床URL是否正确，并已包含完整的上传路径
    * 验证认证码是否有效
    * 检查图床服务是否有文件大小或类型限制
 
